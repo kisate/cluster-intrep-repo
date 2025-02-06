@@ -3,13 +3,21 @@ from distilabel.models import vLLM
 from distilabel.pipeline import Pipeline
 from distilabel.steps.tasks import TextGeneration
 from distilabel.steps import Step
-from datasets import load_dataset
+import json
+import os
 
 prompt_template = """\
 You will be given a problem. Please reason step by step, and put your final answer within \boxed{}:
 {{ instruction }}"""
 
-dataset = load_dataset("AI-MO/NuminaMath-TIR", split="train").select(range(1000))
+def load_dataset_from_file(domain_name, task_name):
+    prompt_dir = f"prompts/{domain_name}/"
+    with open(prompt_dir + f"{task_name}.json", 'r') as file:
+        return json.load(file)
+
+domain_name = "your_domain_name"  # Replace with actual domain name
+task_name = "your_task_name"  # Replace with actual task name
+dataset = load_dataset_from_file(domain_name, task_name)
 
 model_id = "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B"  # Exchange with another smol distilled r1
 
