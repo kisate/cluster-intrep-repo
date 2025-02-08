@@ -1,14 +1,13 @@
 import torch
 import json
 import numpy as np
-from torch.utils.data import DataLoader, Dataset
 from tqdm.auto import trange, tqdm
 from utils import Probe, set_seed, train_probe
 import os
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
-
-os.chdir("..")
+import concurrent
+from torch.utils.data import Dataset
 
 seed = 42
 set_seed(seed)
@@ -109,9 +108,9 @@ final_steps = set()
 for step in all_steps:
     pos_neg_ratio = len(positive_data["train"][step]) / len(negative_data["train"][step])
 
-    if pos_neg_ratio < 0.5:
+    if pos_neg_ratio < 0.3:
         continue
-    if pos_neg_ratio > 2:
+    if pos_neg_ratio > 6:
         continue
 
     final_steps.add(step)
@@ -191,7 +190,7 @@ def train_on_device(step, probe, train_dataset, test_dataset, device_id):
     device = torch.device(f"cuda:{device_id}" if torch.cuda.is_available() else "cpu")
     probe.to(device)
     collate_fn_with_device = partial(collate_fn, device=device)
-    return train_probe(probe, train_dataset, test_dataset, n_epochs=10, silent=True, lr=1e-4, collate_fn=collate_fn_with_device, batch_size=16)[1]
+    return train_probe(probe, train_dataset, test_dataset, n_epochs=20, silent=True, lr=1e-4, collate_fn=collate_fn_with_device, batch_size=16)[1]
 
 accuracy = {}
 
