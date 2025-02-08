@@ -51,7 +51,7 @@ def load_data(activations_file, pos_info_file):
     return train_dataset, test_dataset
 
 
-def train_probe(probe, train_dataset, test_dataset, n_epochs=10, lr=1e-3, silent=False, collate_fn=None, batch_size=256):
+def train_probe(probe, train_dataset, test_dataset, n_epochs=10, lr=1e-3, silent=False, collate_fn=None, batch_size=256, patience=5):
     optimizer = torch.optim.Adam(probe.parameters(), lr=lr)
     criterion = torch.nn.CrossEntropyLoss()
 
@@ -65,7 +65,14 @@ def train_probe(probe, train_dataset, test_dataset, n_epochs=10, lr=1e-3, silent
 
     pbar = range(n_epochs)
 
+    best_acc = 0.0
+    epochs_no_improve = 0
+
     for epoch in pbar:
+        if epochs_no_improve >= patience:
+            if not silent:
+                print("Early stopping triggered")
+            break
         probe.train()
 
         for batch in train_loader:
@@ -106,5 +113,11 @@ def train_probe(probe, train_dataset, test_dataset, n_epochs=10, lr=1e-3, silent
         if not silent:
             print(f"Epoch {epoch}, acc: {acc}")
 
-    return probe, acc, loss.item()
+        if acc > best_acc:
+            best_acc = acc
+            epochs_no_improve = 0
+        else:
+            epochs_no_improve += 1
+
+    return probe, best_acc, loss.item()
 
