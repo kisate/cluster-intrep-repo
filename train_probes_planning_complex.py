@@ -4,7 +4,8 @@ import numpy as np
 from tqdm.auto import trange, tqdm
 from utils import Probe, set_seed, train_probe
 import os
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from queue import Queue
 from functools import partial
 import concurrent
 from torch.utils.data import Dataset
@@ -192,16 +193,29 @@ def train_on_device(step, probe, train_dataset, test_dataset, device_id):
     collate_fn_with_device = partial(collate_fn, device=device)
     return train_probe(probe, train_dataset, test_dataset, n_epochs=20, silent=True, lr=1e-4, collate_fn=collate_fn_with_device, batch_size=16)[1]
 
+# Initialize a queue with available device IDs
+device_queue = Queue()
+for i in range(8):
+    device_queue.put(i)
+
 accuracy = {}
+
+def worker(step, probe, train_dataset, test_dataset):
+    device_id = device_queue.get()  # Get a free device ID
+    try:
+        acc = train_on_device(step, probe, train_dataset, test_dataset, device_id)
+    finally:
+        device_queue.put(device_id)  # Return the device ID to the queue
+    return step, acc
 
 with ThreadPoolExecutor(max_workers=8) as executor:
     futures = {
-        executor.submit(train_on_device, step, probes[step], train_datasets[step], test_datasets[step], device_id % 8): step
-        for device_id, step in enumerate(final_steps)
+        executor.submit(worker, step, probes[step], train_datasets[step], test_datasets[step]): step
+        for step in final_steps
     }
-    for future in tqdm(concurrent.futures.as_completed(futures), total=len(futures)):
-        step = futures[future]
-        accuracy[step] = future.result()
+    for future in tqdm(as_completed(futures), total=len(futures)):
+        step, acc = future.result()
+        accuracy[step] = acc
 
 for step in final_steps:
     propotion = len(positive_data["test"][step]) / (len(positive_data["test"][step]) + len(negative_data["test"][step]))
