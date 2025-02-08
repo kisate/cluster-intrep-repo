@@ -5,6 +5,8 @@ from torch.utils.data import DataLoader, Dataset
 from tqdm.auto import trange, tqdm
 from utils import Probe, set_seed, train_probe
 import os
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 
 os.chdir("..")
 
@@ -146,7 +148,7 @@ class ProbeDataset(Dataset):
             "label": int(is_positive)
         }
 
-def collate_fn(batch):
+def collate_fn(batch, device):
     inputs = [x["inputs"] for x in batch]
     labels = [x["label"] for x in batch]
 
@@ -185,13 +187,22 @@ probes = {
     step: LSTMProbe(n_dim, 256, 2).to(device) for step in final_steps
 }
 
-# Use DataParallel for multi-GPU training
-probes = {step: torch.nn.DataParallel(probe, device_ids=list(range(8))) for step, probe in probes.items()}
+def train_on_device(step, probe, train_dataset, test_dataset, device_id):
+    device = torch.device(f"cuda:{device_id}" if torch.cuda.is_available() else "cpu")
+    probe.to(device)
+    collate_fn_with_device = partial(collate_fn, device=device)
+    return train_probe(probe, train_dataset, test_dataset, n_epochs=10, silent=True, lr=1e-4, collate_fn=collate_fn_with_device, batch_size=16)[1]
 
 accuracy = {}
 
-for step in tqdm(final_steps):
-    accuracy[step] = train_probe(probes[step], train_datasets[step], test_datasets[step], n_epochs=10, silent=True, lr=1e-4, collate_fn=collate_fn, batch_size=16)[1]
+with ThreadPoolExecutor(max_workers=8) as executor:
+    futures = {
+        executor.submit(train_on_device, step, probes[step], train_datasets[step], test_datasets[step], device_id): step
+        for device_id, step in enumerate(final_steps)
+    }
+    for future in tqdm(concurrent.futures.as_completed(futures), total=len(futures)):
+        step = futures[future]
+        accuracy[step] = future.result()
 
 for step in final_steps:
     propotion = len(positive_data["test"][step]) / (len(positive_data["test"][step]) + len(negative_data["test"][step]))
