@@ -196,7 +196,7 @@ accuracy = {}
 
 with ThreadPoolExecutor(max_workers=8) as executor:
     futures = {
-        executor.submit(train_on_device, step, probes[step], train_datasets[step], test_datasets[step], device_id): step
+        executor.submit(train_on_device, step, probes[step], train_datasets[step], test_datasets[step], device_id % 8): step
         for device_id, step in enumerate(final_steps)
     }
     for future in tqdm(concurrent.futures.as_completed(futures), total=len(futures)):
