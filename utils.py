@@ -3,6 +3,7 @@ import json
 
 from torch.utils.data import DataLoader, Dataset
 from tqdm.auto import trange, tqdm
+from transformers import AutoTokenizer
 
 def set_seed(seed):
     torch.manual_seed(seed)
@@ -51,7 +52,7 @@ def load_data(activations_file, pos_info_file):
     return train_dataset, test_dataset
 
 
-def train_probe(probe, train_dataset, test_dataset, n_epochs=10, lr=1e-3, silent=False, collate_fn=None, batch_size=256, patience=5):
+def train_probe(probe, train_dataset, test_dataset, n_epochs=10, lr=1e-3, silent=False, collate_fn=None, batch_size=256, patience=5, n_steps=None):
     optimizer = torch.optim.Adam(probe.parameters(), lr=lr)
     criterion = torch.nn.CrossEntropyLoss()
 
@@ -75,7 +76,7 @@ def train_probe(probe, train_dataset, test_dataset, n_epochs=10, lr=1e-3, silent
             break
         probe.train()
 
-        for batch in train_loader:
+        for step_n, batch in enumerate(train_loader):
             inputs = batch["inputs"]
             labels = batch["label"]
 
@@ -86,6 +87,9 @@ def train_probe(probe, train_dataset, test_dataset, n_epochs=10, lr=1e-3, silent
 
             loss.backward()
             optimizer.step()
+
+            if n_steps is not None and step_n >= n_steps:
+                break
 
             # if not silent:
             #     pbar.set_description(f"Epoch {epoch}, loss: {loss.item()}")
@@ -121,3 +125,22 @@ def train_probe(probe, train_dataset, test_dataset, n_epochs=10, lr=1e-3, silent
 
     return probe, best_acc, loss.item()
 
+THINK_TOKEN = 151649
+
+def initialize_tokenizer(model_id) -> AutoTokenizer:
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    tokenizer.chat_template = tokenizer.chat_template.replace("{% if '</think>' in content %}{% set content = content.split('</think>')[-1] %}{% endif %}", "")
+
+    return tokenizer
+
+def tokenize_blocksworld_generation(tokenizer, row):
+    generation = row["generation"]
+    query = row["distilabel_metadata"]["raw_input_text_generation_0"][0]
+
+    messages = [
+        query,
+        {"role": "assistant", "content": generation}
+    ]
+    chat    = tokenizer.apply_chat_template(messages, tokenize=True, add_generation_prompt=False, return_tensors="pt")
+
+    return chat
