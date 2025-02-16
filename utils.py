@@ -126,6 +126,7 @@ def train_probe(probe, train_dataset, test_dataset, n_epochs=10, lr=1e-3, silent
     return probe, best_acc, loss.item()
 
 THINK_TOKEN = 151649
+THINK_START_TOKEN = 151648
 
 def initialize_tokenizer(model_id) -> AutoTokenizer:
     tokenizer = AutoTokenizer.from_pretrained(model_id)
@@ -133,8 +134,9 @@ def initialize_tokenizer(model_id) -> AutoTokenizer:
 
     return tokenizer
 
-def tokenize_blocksworld_generation(tokenizer, row):
-    generation = row["generation"]
+def tokenize_blocksworld_generation(tokenizer, row, generation=None):
+    if generation is None:
+        generation = row["generation"]
     query = row["distilabel_metadata"]["raw_input_text_generation_0"][0]
 
     messages = [

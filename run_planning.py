@@ -19,7 +19,7 @@ tokenizer = AutoTokenizer.from_pretrained(model_id)
 tokenizer.chat_template = tokenizer.chat_template.replace("{% if '</think>' in content %}{% set content = content.split('</think>')[-1] %}{% endif %}", "")
 
 
-dataset = load_dataset("dmitriihook/deepseek-r1-qwen-32b-planning-big")["train"]
+dataset = load_dataset("dmitriihook/deepseek-r1-qwen-32b-planning-mystery")["train"]
 
 activations = []
 
