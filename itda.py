@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from sparsify.xformers_decoder import xformers_embedding_bag
+from .sparsify.xformers_decoder import xformers_embedding_bag
 from torch import nn
 import torch
 
