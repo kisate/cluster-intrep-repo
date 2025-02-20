@@ -13,16 +13,16 @@ prompt_template = """{{ instruction }}"""
 model_id = "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B"  # Exchange with another smol distilled r1
 
 with Pipeline(
-    name="distill-qwen-32b-r1-planning-mystery",
+    name="distill-qwen-32b-r1-planning-4-blocks",
     description="A pipeline to generate data from a distilled r1 model",
 ) as pipeline:
 
     llm = vLLM(
-        cuda_devices=list(range(8)),
+        cuda_devices=list(range(2)),
         model=model_id,
         tokenizer=model_id,
         extra_kwargs={
-            "tensor_parallel_size": 8,
+            "tensor_parallel_size": 2,
             "max_model_len": 8192,
         },
         generation_kwargs={
@@ -51,14 +51,14 @@ import os
 print(os.listdir("."))
 
 def load_dataset_from_file(domain_name, task_name):
-    prompt_dir = Path(f"./planning/cot-planning/prompts/{domain_name}/")
+    prompt_dir = Path(f"./cot-planning/prompts/{domain_name}/")
     with open(prompt_dir / f"{task_name}.json", 'r') as file:
         return json.load(file)
 
 if __name__ == "__main__":
     args = parser.parse_args()
 
-    domain_name = "blocksworld_mystery"
+    domain_name = "blocksworld_4_blocks"
     task_name = "plan_generation_po"
     dataset = load_dataset_from_file(domain_name, task_name)
 
@@ -67,4 +67,4 @@ if __name__ == "__main__":
     print(dataset)
     
     distiset = pipeline.run(dataset=dataset)
-    distiset.push_to_hub(repo_id="dmitriihook/deepseek-r1-qwen-32b-planning-mystery")
+    distiset.push_to_hub(repo_id="dmitriihook/deepseek-r1-qwen-32b-planning-4-blocks")
