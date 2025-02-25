@@ -13,16 +13,16 @@ prompt_template = """{{ instruction }}"""
 model_id = "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B"  # Exchange with another smol distilled r1
 
 with Pipeline(
-    name="distill-qwen-32b-r1-planning-6-blocks-big",
+    name="distill-qwen-32b-r1-planning-6-blocks-small",
     description="A pipeline to generate data from a distilled r1 model",
 ) as pipeline:
 
     llm = vLLM(
-        cuda_devices=list(range(2)),
+        cuda_devices=list(range(8)),
         model=model_id,
         tokenizer=model_id,
         extra_kwargs={
-            "tensor_parallel_size": 2,
+            "tensor_parallel_size": 8,
             "max_model_len": 8192,
         },
         generation_kwargs={
@@ -62,9 +62,9 @@ if __name__ == "__main__":
     task_name = "plan_generation_po"
     dataset = load_dataset_from_file(domain_name, task_name)
 
-    dataset = Dataset.from_list(dataset["instances"])
+    dataset = Dataset.from_list(dataset["instances"]).select(range(10))
 
     print(dataset)
     
     distiset = pipeline.run(dataset=dataset)
-    distiset.push_to_hub(repo_id="dmitriihook/deepseek-r1-qwen-32b-planning-6-blocks-big")
+    distiset.push_to_hub(repo_id="dmitriihook/deepseek-r1-qwen-32b-planning-6-blocks-small")
