@@ -141,7 +141,7 @@ def tokenize_blocksworld_generation(tokenizer, row, generation=None):
 
     messages = [
         query,
-        {"role": "assistant", "content": generation}
+        {"role": "assistant", "content": "<think>\n\n"+generation}
     ]
     chat    = tokenizer.apply_chat_template(messages, tokenize=True, add_generation_prompt=False, return_tensors="pt")
 

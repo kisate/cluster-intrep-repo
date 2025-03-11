@@ -7,6 +7,8 @@ import json
 from pathlib import Path
 
 prompt_template = """{{ instruction }}"""
+dataset = load_dataset("dmitriihook/deepseek-r1-qwen-32b-planning-4-blocks")["train"]
+domain_name = "blocksworld_4_blocks"
 
 
 os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
@@ -15,21 +17,12 @@ compute_dtype = torch.bfloat16
 device   = 'cuda'
 model_id = "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B"
 
-# model     = AutoModelForCausalLM.from_pretrained(model_id, torch_dtype=compute_dtype, attn_implementation="sdpa", device_map=device)
-tokenizer = AutoTokenizer.from_pretrained(model_id)
-
-dataset = load_dataset("dmitriihook/deepseek-r1-qwen-32b-planning-mystery")["train"]
-tokenizer.chat_template = tokenizer.chat_template.replace("{% if '</think>' in content %}{% set content = content.split('</think>')[-1] %}{% endif %}", "")
-
-
-print(os.listdir("."))
-
 def load_dataset_from_file(domain_name, task_name):
     prompt_dir = Path(f"./cot-planning/results/{domain_name}/deepseek-32b/")
     with open(prompt_dir / f"{task_name}.json", 'r') as file:
         return json.load(file)
 
-domain_name = "blocksworld_mystery"
+
 task_name = "plan_generation_po"
 parsed_dataset = load_dataset_from_file(domain_name, task_name)["instances"]
 
