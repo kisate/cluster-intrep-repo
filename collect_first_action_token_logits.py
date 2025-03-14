@@ -15,7 +15,7 @@ parsed_datasets = {
     6: "blocksworld-6-blocks-actions-first.json"
 }
 
-save_path = "first_action_token_logits_{core}.json"
+save_path = "first_action_token_logits_2_{core}.json"
 
 def main(core_id: int, row_id: list[int]):
     tokenizer = initialize_tokenizer(model_id)
@@ -63,14 +63,17 @@ def main(core_id: int, row_id: list[int]):
 
 
 if __name__ == "__main__":
-    n_processes = 8
-    n_rows = 2000
+    n_processes = 7
+    rows_start = 2000
+    rows_end = 5000
+
+    n_rows = rows_end - rows_start
 
     with mp.Pool(n_processes) as pool:
         rows_per_process = n_rows // n_processes
-        row_ids = [list(range(i * rows_per_process, (i + 1) * rows_per_process)) for i in range(n_processes)]
+        row_ids = [list(range(rows_start + i * rows_per_process, rows_start + (i + 1) * rows_per_process)) for i in range(n_processes)]
 
-        pool.starmap(main, [(i, row_ids[i]) for i in range(n_processes)])
+        pool.starmap(main, [(i + 1, row_ids[i]) for i in range(n_processes)])
 
     with open(save_path.format(core="all"), "w") as f:
         results = []

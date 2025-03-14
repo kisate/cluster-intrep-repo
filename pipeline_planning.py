@@ -11,9 +11,15 @@ import os
 prompt_template = """{{ instruction }}"""
 
 model_id = "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B"  # Exchange with another smol distilled r1
+model_id = "Qwen/QwQ-32B"
+
+pipeline_name = "distill-qwen-32b-r1-planning-6-blocks-small"
+pipeline_name = "qwq-32b-mystery"
+repo_id = "dmitriihook/qwq-32b-planning-mystery"
+
 
 with Pipeline(
-    name="distill-qwen-32b-r1-planning-6-blocks-small",
+    name=pipeline_name,
     description="A pipeline to generate data from a distilled r1 model",
 ) as pipeline:
 
@@ -58,13 +64,13 @@ def load_dataset_from_file(domain_name, task_name):
 if __name__ == "__main__":
     args = parser.parse_args()
 
-    domain_name = "blocksworld_6_blocks"
+    domain_name = "blocksworld_mystery"
     task_name = "plan_generation_po"
     dataset = load_dataset_from_file(domain_name, task_name)
 
-    dataset = Dataset.from_list(dataset["instances"]).select(range(10))
+    dataset = Dataset.from_list(dataset["instances"]).select(range(2000))
 
     print(dataset)
     
     distiset = pipeline.run(dataset=dataset)
-    distiset.push_to_hub(repo_id="dmitriihook/deepseek-r1-qwen-32b-planning-6-blocks-small")
+    distiset.push_to_hub(repo_id=repo_id)
