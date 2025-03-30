@@ -14,8 +14,15 @@ model_id = "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B"  # Exchange with another s
 model_id = "Qwen/QwQ-32B"
 
 pipeline_name = "distill-qwen-32b-r1-planning-6-blocks-small"
-pipeline_name = "qwq-32b-mystery"
-repo_id = "dmitriihook/qwq-32b-planning-mystery"
+pipeline_name = "qwq-32b-mystery-24k"
+pipeline_name = "qwq-32b-6-blocks"
+pipeline_name = "qwq-32b-mystery-2-24k"
+pipeline_name = "qwq-32b-mystery-3-24k"
+pipeline_name = "qwq-32b-mystery-4-24k"
+repo_id = "dmitriihook/qwq-32b-planning-6-blocks"
+repo_id = "dmitriihook/qwq-32b-planning-mystery-2-24k"
+repo_id = "dmitriihook/qwq-32b-planning-mystery-3-24k"
+repo_id = "dmitriihook/qwq-32b-planning-mystery-4-24k"
 
 
 with Pipeline(
@@ -29,11 +36,11 @@ with Pipeline(
         tokenizer=model_id,
         extra_kwargs={
             "tensor_parallel_size": 8,
-            "max_model_len": 8192,
+            "max_model_len": 8192 * 3,
         },
         generation_kwargs={
             "temperature": 0,
-            "max_new_tokens": 8192,
+            "max_new_tokens": 8192 * 3,
         },
     )
     prompt_column = "query"
@@ -64,11 +71,12 @@ def load_dataset_from_file(domain_name, task_name):
 if __name__ == "__main__":
     args = parser.parse_args()
 
-    domain_name = "blocksworld_mystery"
+    domain_name = "blocksworld_mystery_4"
+    # domain_name = "blocksworld_6_blocks"
     task_name = "plan_generation_po"
     dataset = load_dataset_from_file(domain_name, task_name)
 
-    dataset = Dataset.from_list(dataset["instances"]).select(range(2000))
+    dataset = Dataset.from_list(dataset["instances"]).select(range(650))
 
     print(dataset)
     

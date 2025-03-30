@@ -1,6 +1,7 @@
 from collections import defaultdict
 from typing import Optional
 
+import re
 import numpy as np
 from tqdm.auto import tqdm
 
@@ -51,8 +52,35 @@ def make_labels_dict(labels_dataset, n_blocks):
 
     return labels_dict
 
+def extract_actions(row):
+    generation = row["generation"]
+    if "[PLAN]" not in generation:
+        return None
+    if "[PLAN END]" not in generation:
+        return None
+    
+    plan_start = generation.index("[PLAN]") + len("[PLAN]")
+    plan = generation[plan_start:].strip()
+    plan = plan.split("[PLAN END]")[0].strip()
+    actions = plan.split("\n")
 
-import re
+    return actions
+
+
+def parse_block_actions(commands):
+    actions = ["unstack", "put down", "pick up", "stack"]
+    parsed_commands = []
+
+    for command in commands:
+        for action in actions:
+            if command.startswith(action):
+                blocks = re.findall(r'Block [A-Z]', command)
+                blocks = [block.split()[-1] for block in blocks]  # Extract only the letter
+                parsed_commands.append((action, blocks))
+                break
+
+    return parsed_commands
+
 
 def parse_blocks(text):
     initial_state = []
@@ -228,8 +256,11 @@ def block2int(block, n_blocks):
         return n_blocks
     if block == "sky":
         return n_blocks + 1
+    block_n = ord(block) - ord("A")
+    assert block_n < n_blocks
+    assert block_n >= 0
 
-    return ord(block) - ord("A")
+    return block_n
 
 
 def int2block(i, n_blocks):

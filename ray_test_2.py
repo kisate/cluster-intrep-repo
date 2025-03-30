@@ -434,7 +434,7 @@ def train_func(config: dict):
         test_items = training_data[n_train:]
 
         if config.get("probe_type") == "mlha":
-            probe = MLHAProbe(n_dim, n_dim, 40, n_blocks)
+            probe = MLHAProbe(n_dim, n_dim, 256, n_blocks)
         elif config.get("probe_type") == "gru":
             probe = GRUProbe(n_dim, 1000, n_blocks)
         else:
@@ -593,6 +593,8 @@ config = {
     "do_profile": False,
     "n_prev_tokens": 1000,
     "probe_type": "gru",
+    "n_layer": 47,
+    "lr": 1e-4
 }
 
 scaling_config = ray.train.ScalingConfig(num_workers=n_gpus, use_gpu=True)

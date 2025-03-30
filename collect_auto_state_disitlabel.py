@@ -12,10 +12,11 @@ from utils import initialize_tokenizer
 prompt_template = """{{ instruction }}"""
 
 model_id = "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B"  # Exchange with another smol distilled r1
+model_id = "Qwen/QwQ-32B"
 tokenizer = initialize_tokenizer(model_id)
 
 with Pipeline(
-    name="distill-qwen-32b-r1-planning-4-blocks-self-probing-state-distilabel",
+    name="qwq-32b-6-blocks-self-probing-state-distilabel",
     description="A pipeline to generate data from a distilled r1 model",
 ) as pipeline:
 
@@ -96,10 +97,10 @@ def process_batch(batch: Dict[str, Any]) -> Dict[str, Any]:
 if __name__ == "__main__":
     args = parser.parse_args()
     start = 0
-    end = 1500
+    end = 300
 
-    blocksworld_type = "4-blocks"
-    dataset = load_dataset(f"dmitriihook/deepseek-r1-qwen-32b-planning-{blocksworld_type}")["train"]
+    blocksworld_type = "6-blocks"
+    dataset = load_dataset(f"dmitriihook/qwq-32b-planning-{blocksworld_type}")["train"]
     dataset = dataset.add_column("idx", range(len(dataset)))    
 
     dataset: Dataset = dataset.select(range(start, end))
@@ -107,4 +108,4 @@ if __name__ == "__main__":
     dataset = dataset.map(process_batch, batched=True, num_proc=20, remove_columns=dataset.column_names, load_from_cache_file=False)
     
     distiset = pipeline.run(dataset=dataset)
-    distiset.push_to_hub(repo_id="dmitriihook/deepseek-r1-qwen-32b-planning-4-blocks-self-probing-state-distilabel")
+    distiset.push_to_hub(repo_id="dmitriihook/qwq-32b-planning-6-blocks-self-probing-state-distilabel")
