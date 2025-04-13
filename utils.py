@@ -146,3 +146,247 @@ def tokenize_blocksworld_generation(tokenizer, row, generation=None):
     chat    = tokenizer.apply_chat_template(messages, tokenize=True, add_generation_prompt=False, return_tensors="pt")
 
     return chat
+
+# Phrases to steer with
+DOMAIN_PHRASES = {
+    "mystery_1": {
+        "actions": {
+            "attack": "attack",
+            "succumb": "succumb",
+            "overcome": "overcome",
+            "feast": "feast"
+        },
+        "predicates": {
+            "planet": "planet",
+            "province": "province",
+            "harmony": "harmony",
+            "craves": "craves",
+            "pain": "pain"
+        }
+    },
+    "mystery_2": {
+        "actions": {
+            "attack": "illuminate",
+            "succumb": "silence",
+            "overcome": "distill",
+            "feast": "divest"
+        },
+        "predicates": {
+            "planet": "aura",
+            "province": "essence",
+            "harmony": "nexus",
+            "craves": "harmonizes",
+            "pain": "pulse"
+        }
+    },
+    "mystery_3": {
+        "actions": {
+            "attack": "tltezi",
+            "succumb": "jchntg",
+            "overcome": "deesdu",
+            "feast": "xavirm"
+        },
+        "predicates": {
+            "planet": "oxtslo",
+            "province": "adohre",
+            "harmony": "jqlyol",
+            "craves": "gszswg",
+            "pain": "ivbmyg"
+        }
+    },
+    "mystery_4": {
+        "actions": {
+            "attack": "swim",
+            "succumb": "fire",
+            "overcome": "deduct",
+            "feast": "respond"
+        },
+        "predicates": {
+            "planet": "fever",
+            "province": "marble",
+            "harmony": "craving",
+            "craves": "mines",
+            "pain": "shadow"
+        }
+    },
+    "mystery_5": {
+        "actions": {
+            "attack": "whisper",
+            "succumb": "calculate",
+            "overcome": "orbit",
+            "feast": "navigate"
+        },
+        "predicates": {
+            "planet": "crystal",
+            "province": "fountain",
+            "harmony": "autumn",
+            "craves": "illuminates",
+            "pain": "legend"
+        }
+    },
+    "mystery_6": {
+        "actions": {
+            "attack": "decode",
+            "succumb": "hibernate",
+            "overcome": "thunder",
+            "feast": "quench"
+        },
+        "predicates": {
+            "planet": "prism",
+            "province": "hollow",
+            "harmony": "zenith",
+            "craves": "echoes",
+            "pain": "emblem"
+        }
+    },
+    "mystery_7": {
+        "actions": {
+            "attack": "explore",
+            "succumb": "ripen",
+            "overcome": "weave",
+            "feast": "bloom"
+        },
+        "predicates": {
+            "planet": "fossil",
+            "province": "dialect",
+            "harmony": "equinox",
+            "craves": "fractures",
+            "pain": "symphony"
+        }
+    },
+    "mystery_8": {
+        "actions": {
+            "attack": "harvest",
+            "succumb": "ignite",
+            "overcome": "carve",
+            "feast": "suspend"
+        },
+        "predicates": {
+            "planet": "nebula",
+            "province": "labyrinth",
+            "harmony": "mirage",
+            "craves": "captivates",
+            "pain": "cascade"
+        }
+    },
+    "mystery_9": {
+        "actions": {
+            "attack": "construct",
+            "succumb": "demolish",
+            "overcome": "reinforce",
+            "feast": "collapse"
+        },
+        "predicates": {
+            "planet": "eclipse",
+            "province": "vintage",
+            "harmony": "paradox",
+            "craves": "resonates",
+            "pain": "twilight"
+        }
+    },
+    "mystery_10": {
+        "actions": {
+            "attack": "plant",
+            "succumb": "harvest",
+            "overcome": "nurture",
+            "feast": "prune"
+        },
+        "predicates": {
+            "planet": "crystal",
+            "province": "puzzle",
+            "harmony": "vortex",
+            "craves": "whispers",
+            "pain": "cipher"
+        }
+    },
+    "mystery_11": {
+        "actions": {
+            "attack": "prosecute",
+            "succumb": "acquit",
+            "overcome": "testify",
+            "feast": "appeal"
+        },
+        "predicates": {
+            "planet": "nebula",
+            "province": "molecule",
+            "harmony": "anthem",
+            "craves": "silhouettes",
+            "pain": "voltage"
+        }
+    },
+    "mystery_12": {
+        "actions": {
+            "attack": "broadcast",
+            "succumb": "receive",
+            "overcome": "encrypt",
+            "feast": "decode"
+        },
+        "predicates": {
+            "planet": "horizon",
+            "province": "compass",
+            "harmony": "solstice",
+            "craves": "orbits",
+            "pain": "quantum"
+        }
+    },
+    "mystery_13": {
+        "actions": {
+            "attack": "whisper",
+            "succumb": "banish",
+            "overcome": "entangle",
+            "feast": "unmask"
+        },
+        "predicates": {
+            "planet": "tethered",
+            "province": "unburdened",
+            "harmony": "hollow",
+            "craves": "shrouds",
+            "pain": "consuming"
+        }
+    },
+    "mystery_14": {
+        "actions": {
+            "attack": "question",
+            "succumb": "resolve",
+            "overcome": "interweave",
+            "feast": "liberate"
+        },
+        "predicates": {
+            "planet": "echoing",
+            "province": "sovereign",
+            "harmony": "potential",
+            "craves": "obscures",
+            "pain": "contemplating"
+        }
+    },
+    "mystery_15": {
+        "actions": {
+            "attack": "summon",
+            "succumb": "dismiss",
+            "overcome": "fold",
+            "feast": "unravel"
+        },
+        "predicates": {
+            "planet": "suspended",
+            "province": "timeless",
+            "harmony": "interval",
+            "craves": "transcends",
+            "pain": "enveloping"
+        }
+    },
+    "mystery_16": {
+        "actions": {
+            "attack": "illuminate",
+            "succumb": "silence",
+            "overcome": "distill",
+            "feast": "divest"
+        },
+        "predicates": {
+            "planet": "aura",
+            "province": "essence",
+            "harmony": "nexus",
+            "craves": "harmonizes",
+            "pain": "pulse"
+        }
+    }
+}

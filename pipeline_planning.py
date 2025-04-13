@@ -35,7 +35,8 @@ with Pipeline(
         model=model_id,
         tokenizer=model_id,
         extra_kwargs={
-            "tensor_parallel_size": 8,
+            "tensor_parallel_size": 2,
+            "tensor_parallel_size": 4,
             "max_model_len": 8192 * 3,
         },
         generation_kwargs={
@@ -76,7 +77,7 @@ if __name__ == "__main__":
     task_name = "plan_generation_po"
     dataset = load_dataset_from_file(domain_name, task_name)
 
-    dataset = Dataset.from_list(dataset["instances"]).select(range(650))
+    dataset = Dataset.from_list(dataset["instances"]).select(range(350))
 
     print(dataset)
     

@@ -79,7 +79,7 @@ def process_item(item):
     }
 
 def main(start, end, n_threads, save_name):
-    blocksworld_type = "mystery-3-24k"
+    blocksworld_type = "4-blocks-small"
     dataset = load_dataset(f"dmitriihook/qwq-32b-planning-{blocksworld_type}")["train"]
 
     dataset = dataset.add_column("index", [i for i in range(len(dataset))])
@@ -107,9 +107,9 @@ from argparse import ArgumentParser
 
 parser = ArgumentParser()
 parser.add_argument("--start", type=int, default=0)
-parser.add_argument("--end", type=int, default=400)
+parser.add_argument("--end", type=int, default=200)
 parser.add_argument("--n_threads", type=int, default=30)
-parser.add_argument("--save_name", type=str, default="blocksworld-mystery-3-qwq-reasoning-parts-exploration")
+parser.add_argument("--save_name", type=str, default="blocksworld-4-blocks-qwq-reasoning-parts-exploration")
 
 if __name__ == "__main__":
     args = parser.parse_args()
