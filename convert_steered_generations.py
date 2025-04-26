@@ -7,7 +7,7 @@ def main_gl(mystery_n, copy_n=None):
     domain = f"blocksworld_mystery_{mystery_n}"
 
     if not from_intermediate:
-        file_path = f"results/mystery_steered_1_il_100_mean_triple_greedy_8/steered_results_mystery_{mystery_n}.json"
+        file_path = f"results/mystery_replaced_il_60_triple_8_40_47_r/steered_results_mystery_{mystery_n}.json"
         dataset = json.load(open(file_path, "r"))
     else:
         path = Path("intermediate_results/intermediate_results_9_full")
@@ -82,9 +82,9 @@ def main_gl(mystery_n, copy_n=None):
             suffix = f"_{copy_n}"
         
         if steered_generation:
-            final_dir = Path(f"cot-planning/responses/{formatted_json['domain']}/qwq-32b-steered-full-1-il-100-mean-triple-8-greedy{suffix}/")
+            final_dir = Path(f"cot-planning/responses/{formatted_json['domain']}/qwq-32b-replaced-full-1-il-60-triple-8-40-47-r{suffix}/")
         else:
-            final_dir = Path(f"cot-planning/responses/{formatted_json['domain']}/qwq-32b-original-full-1-il-100-mean-triple-8-greedy{suffix}/")
+            final_dir = Path(f"cot-planning/responses/{formatted_json['domain']}/qwq-32b-original-full-1-il-60-triple-8-40-47-r{suffix}/")
             
 
         final_dir.mkdir(parents=True, exist_ok=True)

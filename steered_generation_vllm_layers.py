@@ -21,6 +21,8 @@ def parse_args():
     parser.add_argument("--n_workers", type=int, default=2, help="Number of workers to use")
     parser.add_argument("--initial_lines", type=int, default=40, help="Initial number of lines to include")
     parser.add_argument("--target_layer", type=int, default=47, help="Target layer to apply the hook")
+    parser.add_argument("--starting_layer", type=int, default=0, help="Starting layer for the hook")
+    parser.add_argument("--random", action="store_true", help="Randomize the actions")
     parser.add_argument("--scale", type=float, default=1.0, help="Steering scale")
     parser.add_argument("--actions", action="store_true", help="Use actions only")
     parser.add_argument("--predicates", action="store_true", help="Use predicates only")
@@ -143,15 +145,11 @@ def process_rows(row_ids: list[int], rank: int, gpus_per_worker: int, args):
     dataset = load_dataset(dataset_name)["train"]
     
     # Load representations
-    repr_file = f"mystery_representations_greedy_avg/mystery_{domain_number}/mean_reprs_mystery_{domain_number}.json"
+    repr_file = f"multilayer_representations_avg/multilayer_7k/mystery_{domain_number}/mean_reprs_mystery_{domain_number}_multi_layer.json"
     
         
     with open(repr_file, 'r') as f:
         reprs = json.load(f)
-    
-    mean_reprs = {k: np.array(v) for k, v in reprs["mean_reprs"].items()}
-    mean_actions = np.array(reprs["mean_actions"])
-    mean_predicates = np.array(reprs["mean_predicates"])
     
     # Get domain phrases
     domain_key = f"mystery_{domain_number}"
@@ -192,6 +190,20 @@ def process_rows(row_ids: list[int], rank: int, gpus_per_worker: int, args):
         row_ids[i:i + chunk_size] for i in range(0, len(row_ids), chunk_size)
     ]
     
+    
+    predicate_phrases = [x for x in phrases if x not in action_phrases]    
+    
+    if args.random:
+        shuffled_actions = action_phrases.copy()
+        np.random.shuffle(shuffled_actions)
+        shuffled_action_mapping = {x: y for x, y in zip(action_phrases, shuffled_actions)}
+        
+        shuffled_predicates = predicate_phrases.copy()
+        np.random.shuffle(shuffled_predicates)
+        
+        shuffled_mapping = {x: y for x, y in zip(predicate_phrases, shuffled_predicates)}
+        shuffled_mapping.update(shuffled_action_mapping)
+    
     for _row_ids in chunks:
         all_tokens = []
         phrase_masks = {phrase: [] for phrase in phrases}
@@ -229,25 +241,33 @@ def process_rows(row_ids: list[int], rank: int, gpus_per_worker: int, args):
             k: np.concatenate(v, axis=0) for k, v in phrase_masks.items()
         }
         
+        if args.random:
+            masks_combined = {
+                shuffled_mapping[k]: v for k, v in masks_combined.items()
+            }
+        
         combined_len = masks_combined[phrases[0]].shape[0] if phrases else 0
+        target_layers = list(range(args.starting_layer, target_layer + 1))
+
+        for layer in target_layers:
+            
+            mean_reprs = {k: np.array(v) for k, v in reprs[f"{layer}"]["mean_reprs"].items()}
+            mean_actions = np.array(reprs[f"{layer}"]["mean_actions"])
+            mean_predicates = np.array(reprs[f"{layer}"]["mean_predicates"])
         
+            # Create a hook function using the factory
+            current_hook = create_hook(
+                phrases=phrases,
+                action_phrases=action_phrases,
+                masks_batch_combined=masks_combined,
+                mean_reprs=mean_reprs,
+                mean_actions=mean_actions,
+                mean_predicates=mean_predicates,
+                combined_len=combined_len,
+                block_size=block_size,
+                scale=args.scale,
+            )
         
-        # Create a hook function using the factory
-        current_hook = create_hook(
-            phrases=phrases,
-            action_phrases=action_phrases,
-            masks_batch_combined=masks_combined,
-            mean_reprs=mean_reprs,
-            mean_actions=mean_actions,
-            mean_predicates=mean_predicates,
-            combined_len=combined_len,
-            block_size=block_size,
-            scale=args.scale,
-        )
-        
-        # Apply hook to model
-        
-        for layer in range(40, 48):
             llm.apply_model(
                 lambda x: add_hook(x.model.layers[layer], current_hook),
             )
