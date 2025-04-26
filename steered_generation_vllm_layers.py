@@ -66,7 +66,7 @@ def extract_all_phrase_positions(tokens, phrase, tokenizer, cot_only=True):
             presence_mask = presence_mask[:-1]
 
         for p in (torch.where(presence_mask)[0]).tolist():
-            if p < 1000:
+            if p < 3000:
                 continue
             positions.add(
                 tuple([p, p + len(phts)])
@@ -126,9 +126,9 @@ def process_rows(row_ids: list[int], rank: int, gpus_per_worker: int, args):
     gpu_ids = list(range(rank * gpus_per_worker, (rank + 1) * gpus_per_worker))
     os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, gpu_ids))
     
-    row_ids = [
-        x for x in row_ids for _ in range(3)
-    ]
+    # row_ids = [
+    #     x for x in row_ids for _ in range(3)
+    # ]
     
     model_id = args.model_id
     domain_number = args.domain_number
@@ -212,8 +212,9 @@ def process_rows(row_ids: list[int], rank: int, gpus_per_worker: int, args):
             row = dataset[i]
             
             # Process text
-            text = "\n\n".join(row["generation"].split("\n\n")[:initial_lines])
-            tokens = tokenize_blocksworld_generation(tokenizer, row, text)[:, :-2][0]
+            # text = "\n\n".join(row["generation"].split("\n\n")[:initial_lines])
+            tokens = tokenize_blocksworld_generation(tokenizer, row)[:, :-2][0]
+            tokens = tokens[:4500]
             all_tokens.append(tokens)
             
             # Get phrase positions for this row
