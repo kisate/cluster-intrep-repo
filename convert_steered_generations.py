@@ -2,12 +2,19 @@ import json
 
 from pathlib import Path
 
-def main_gl(mystery_n, copy_n=None):
+def main_gl(mystery_n, copy_n=None, suffix=""):
     from_intermediate = False
     domain = f"blocksworld_mystery_{mystery_n}"
 
+    if suffix != "":
+        in_suffix = f"_{suffix}"
+        out_suffix = f"-{suffix}"
+    else:
+        in_suffix = ""
+        out_suffix = ""
+
     if not from_intermediate:
-        file_path = f"results/mystery_replaced_3000_4500_8_30_47_r/steered_results_mystery_{mystery_n}.json"
+        file_path = f"results/mystery_replaced_s_10_t_1000_2500_l_0_44_fix_rescale{in_suffix}/steered_results_mystery_{mystery_n}.json"
         dataset = json.load(open(file_path, "r"))
     else:
         path = Path("intermediate_results/intermediate_results_9_full")
@@ -82,9 +89,9 @@ def main_gl(mystery_n, copy_n=None):
             suffix = f"_{copy_n}"
         
         if steered_generation:
-            final_dir = Path(f"cot-planning/responses/{formatted_json['domain']}/qwq-32b-replaced-full-3000-4500-8-30-47-r{suffix}/")
+            final_dir = Path(f"cot-planning/responses/{formatted_json['domain']}/qwq-32b-replaced-full-1000-2500-10-l-44-fix-rescale{out_suffix}{suffix}/")
         else:
-            final_dir = Path(f"cot-planning/responses/{formatted_json['domain']}/qwq-32b-original-full-3000-4500-8-30-47-r{suffix}/")
+            final_dir = Path(f"cot-planning/responses/{formatted_json['domain']}/qwq-32b-original-full-1000-2500-10-l-44-fix-rescale{out_suffix}{suffix}/")
             
 
         final_dir.mkdir(parents=True, exist_ok=True)
@@ -102,6 +109,9 @@ for i in range(1, 16):
         ci = None
         # for ci in range(3):
         main_gl(i, ci)
+        main_gl(i, ci, "r")
+        # main_gl(i, ci, "mo")
+        # main_gl(i, ci, "z")
     except Exception as e:
         print(f"Error processing mystery_{i}: {e}")
         continue

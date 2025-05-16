@@ -19,12 +19,17 @@ def parse_args():
     parser.add_argument("--model_id", type=str, default="Qwen/QwQ-32B", help="Model ID")
     parser.add_argument("--output_path", type=str, default=None, help="Output file path")
     parser.add_argument("--n_workers", type=int, default=2, help="Number of workers to use")
-    parser.add_argument("--initial_lines", type=int, default=40, help="Initial number of lines to include")
     parser.add_argument("--target_layer", type=int, default=47, help="Target layer to apply the hook")
     parser.add_argument("--scale", type=float, default=1.0, help="Steering scale")
     parser.add_argument("--actions", action="store_true", help="Use actions only")
     parser.add_argument("--predicates", action="store_true", help="Use predicates only")
-    
+    parser.add_argument("--steering_start", type=int, default=1000, help="Steering start")
+    parser.add_argument("--steering_end", type=int, default=3000, help="Steering end")
+    parser.add_argument("--use_avg", action="store_true", help="Use average representation")
+    parser.add_argument("--random", action="store_true", help="Random actions")
+    parser.add_argument("--full_random", action="store_true", help="Random representations")
+    parser.add_argument("--only_phrase_tokens", action="store_true", help="Only steer on phrase tokens")
+    parser.add_argument("--use_10k", action="store_true", help="Use 10k token representations")
     return parser.parse_args()
 
 
@@ -35,7 +40,7 @@ def load_dataset_from_file(domain_name, task_name):
     with open(prompt_dir / f"{task_name}.json", 'r') as file:
         return json.load(file)
 
-def extract_all_phrase_positions(tokens, phrase, tokenizer, cot_only=True):
+def extract_all_phrase_positions(tokens, phrase, tokenizer, cot_only=True, steering_start=None, only_phrase_tokens=False):
     """Find end of the phrase token positions"""
     tokens = tokens.squeeze()
 
@@ -49,6 +54,10 @@ def extract_all_phrase_positions(tokens, phrase, tokenizer, cot_only=True):
     ]
 
     positions = set()
+
+    start_shift = -1
+    if only_phrase_tokens:
+        start_shift = 0
 
     if cot_only:
         start_pos = torch.where(tokens == 151667)[0]
@@ -64,10 +73,10 @@ def extract_all_phrase_positions(tokens, phrase, tokenizer, cot_only=True):
             presence_mask = presence_mask[:-1]
 
         for p in (torch.where(presence_mask)[0]).tolist():
-            if p < 1000:
+            if p < steering_start:
                 continue
             positions.add(
-                tuple([p, p + len(phts)])
+                tuple([p + start_shift, p + len(phts)])
             )        
     
     return sorted(list(set(positions)))
@@ -107,8 +116,17 @@ def create_hook(phrases, action_phrases, masks_batch_combined, mean_reprs, mean_
             
             a = 1 / (1 + scale)
             b = 1 - a
+
+            hs_norm = torch.norm(hs, dim=-1, keepdim=True)
             
-            hs = torch.where(steering_mask == 0, hs, steering_vector)
+            if scale > 0:
+                new_hs = hs * a + steering_vector * b
+                new_hs = new_hs / (torch.norm(new_hs, dim=-1, keepdim=True) + 1e-6) * hs_norm
+            else:
+                new_hs = hs
+            
+            hs = torch.where(steering_mask == 0, hs, new_hs)
+
             # hs += steering_vector * scale
         return hs, res
     
@@ -124,16 +142,15 @@ def process_rows(row_ids: list[int], rank: int, gpus_per_worker: int, args):
     gpu_ids = list(range(rank * gpus_per_worker, (rank + 1) * gpus_per_worker))
     os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, gpu_ids))
     
-    row_ids = [
-        x for x in row_ids for _ in range(3)
-    ]
-    
     model_id = args.model_id
     domain_number = args.domain_number
-    block_size = 4096
-    initial_lines = args.initial_lines
+    steering_start = args.steering_start
+    steering_end = args.steering_end
+    block_size = steering_end
     target_layer = args.target_layer
-    
+    use_avg = args.use_avg
+    only_phrase_tokens = args.only_phrase_tokens
+    use_10k = args.use_10k
     # Load tokenizer
     tokenizer = initialize_tokenizer(model_id)
     
@@ -142,12 +159,24 @@ def process_rows(row_ids: list[int], rank: int, gpus_per_worker: int, args):
     
     dataset = load_dataset(dataset_name)["train"]
     
-    # Load representations
-    repr_file = f"mystery_representations_greedy_avg/mystery_{domain_number}/mean_reprs_mystery_{domain_number}.json"
+    repr_dir = "multilayer_7k"
+    if use_10k:
+        repr_dir = "multilayer_10k"
+
+    if use_avg:
+        if use_10k:
+            repr_file = f"multilayer_representations_avg/{repr_dir}/mystery_{domain_number}/mean_reprs_mystery_{domain_number}_10k_multi_layer.json"
+        else:
+            repr_file = f"multilayer_representations_avg/{repr_dir}/mystery_{domain_number}/mean_reprs_mystery_{domain_number}_multi_layer.json"
+    else:
+        if use_10k:
+            repr_file = f"multilayer_representations/{repr_dir}/mystery_{domain_number}/mean_reprs_mystery_{domain_number}_10k_multi_layer.json"
+        else:
+            repr_file = f"multilayer_representations/{repr_dir}/mystery_{domain_number}/mean_reprs_mystery_{domain_number}_multi_layer.json"
     
-        
     with open(repr_file, 'r') as f:
-        reprs = json.load(f)
+        reprs = json.load(f)[f"{target_layer}"]
+    
     
     mean_reprs = {k: np.array(v) for k, v in reprs["mean_reprs"].items()}
     mean_actions = np.array(reprs["mean_actions"])
@@ -171,7 +200,7 @@ def process_rows(row_ids: list[int], rank: int, gpus_per_worker: int, args):
         tensor_parallel_size=gpus_per_worker, 
         enforce_eager=True, 
         max_seq_len_to_capture=20000, 
-        max_num_batched_tokens=4096,
+        max_num_batched_tokens=block_size,
         max_num_seqs=400,
         gpu_memory_utilization=0.95
     )
@@ -200,13 +229,14 @@ def process_rows(row_ids: list[int], rank: int, gpus_per_worker: int, args):
             row = dataset[i]
             
             # Process text
-            text = "\n\n".join(row["generation"].split("\n\n")[:initial_lines])
-            tokens = tokenize_blocksworld_generation(tokenizer, row, text)[:, :-2][0]
+            # text = "\n\n".join(row["generation"].split("\n\n")[:initial_lines])
+            tokens = tokenize_blocksworld_generation(tokenizer, row)[:, :-2][0]
+            tokens = tokens[:steering_end]
             all_tokens.append(tokens)
             
             # Get phrase positions for this row
             phrase_positions = {
-                phrase: extract_all_phrase_positions(tokens, phrase, tokenizer, cot_only=False)
+                phrase: extract_all_phrase_positions(tokens, phrase, tokenizer, cot_only=False, steering_start=steering_start, only_phrase_tokens=only_phrase_tokens)
                 for phrase in phrases
             }
             
@@ -230,8 +260,44 @@ def process_rows(row_ids: list[int], rank: int, gpus_per_worker: int, args):
         }
         
         combined_len = masks_combined[phrases[0]].shape[0] if phrases else 0
-        
-        
+
+        predicate_phrases = [x for x in phrases if x not in action_phrases]
+
+        if args.random:
+            shuffled_actions = action_phrases.copy()
+            np.random.shuffle(shuffled_actions)
+            
+            shuffled_predicates = predicate_phrases.copy()
+            np.random.shuffle(shuffled_predicates)
+
+            shuffled_mapping = {
+                action_phrases[i]: shuffled_actions[i] for i in range(len(action_phrases))
+            }
+
+            for i in range(len(predicate_phrases)):
+                shuffled_mapping[predicate_phrases[i]] = shuffled_predicates[i]
+                
+            masks_combined = {
+                shuffled_mapping[k]: v for k, v in masks_combined.items()
+            }
+            
+            # phrases = list(shuffled_mapping.values())
+
+        if args.full_random:
+            action_reprs = np.stack([v for k, v in mean_reprs.items() if k in action_phrases])
+            predicate_reprs = np.stack([v for k, v in mean_reprs.items() if k in predicate_phrases])
+
+            actions_mean = np.mean(action_reprs, axis=0)
+            predicates_mean = np.mean(predicate_reprs, axis=0)
+
+            actions_std = np.std(action_reprs, axis=0)
+            predicates_std = np.std(predicate_reprs, axis=0)
+
+            mean_reprs = {
+                **{k: np.random.normal(actions_mean, actions_std) for k in action_phrases},
+                **{k: np.random.normal(predicates_mean, predicates_std) for k in predicate_phrases},
+            }
+            
         # Create a hook function using the factory
         current_hook = create_hook(
             phrases=phrases,
@@ -242,15 +308,15 @@ def process_rows(row_ids: list[int], rank: int, gpus_per_worker: int, args):
             mean_predicates=mean_predicates,
             combined_len=combined_len,
             block_size=block_size,
-            scale=args.scale,
+            scale=args.scale / 2,
         )
         
         # Apply hook to model
         
-        for layer in range(40, 48):
-            llm.apply_model(
-                lambda x: add_hook(x.model.layers[layer], current_hook),
-            )
+        # for layer in range(40, 48):
+        llm.apply_model(
+            lambda x: add_hook(x.model.layers[target_layer], current_hook),
+        )
         
         # Create prompts for each row in batch
         prompts = [TokensPrompt(prompt_token_ids=tokens.tolist()) for tokens in all_tokens]
@@ -303,8 +369,6 @@ def main():
         args.output_path = f"./results/mystery_{args.domain_number}/qwq-32b"
     
     print(f"Processing {n_rows} rows with {n_workers} workers ({gpus_per_worker} GPUs per worker)")
-    print(f"Using {args.initial_lines} initial lines and targeting layer {args.target_layer}")
-    
     # Import multiprocessing here to avoid issues with CUDA initialization
     import torch.multiprocessing as mp
     
