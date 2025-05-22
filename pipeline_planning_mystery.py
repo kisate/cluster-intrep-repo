@@ -1,3 +1,6 @@
+import os
+# os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
+# os.environ["VLLM_USE_V1"] = "0"
 from typing import Any, Dict
 from distilabel.models import vLLM
 from distilabel.pipeline import Pipeline
@@ -6,7 +9,6 @@ from distilabel.steps import Step
 from pathlib import Path
 from datasets import Dataset
 import json
-import os
 from argparse import ArgumentParser
 
 def load_dataset_from_file(domain_name, task_name):
@@ -18,13 +20,13 @@ if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--mystery", type=int, required=True, 
                         help="Mystery number (required)")
-    parser.add_argument("--model", type=str, default="Qwen/QwQ-32B", 
+    parser.add_argument("--model", type=str, default="deepseek-ai/DeepSeek-R1-Distill-Llama-70B", 
                         help="Model ID to use")
     parser.add_argument("--task", type=str, default="plan_generation_po", 
                         help="Task name")
-    parser.add_argument("--context_length", type=int, default=24576, 
+    parser.add_argument("--context_length", type=int, default=16384, 
                         help="Context length in tokens (default: 24k)")
-    parser.add_argument("--num_samples", type=int, default=350, 
+    parser.add_argument("--num_samples", type=int, default=10, 
                         help="Number of samples to process")
     parser.add_argument("--gpu_count", type=int, default=8, 
                         help="Number of GPUs to use")
@@ -60,7 +62,7 @@ if __name__ == "__main__":
     print(f"  Using {args.gpu_count} GPUs")
     
     # Create and configure the pipeline
-    prompt_template = """{{ instruction }}"""
+    prompt_template = """{{ instruction }}\n\nStrictly adhere to the format in the examples."""
     
     with Pipeline(
         name=pipeline_name,
@@ -70,6 +72,7 @@ if __name__ == "__main__":
             cuda_devices=list(range(args.gpu_count)),
             model=model_id,
             tokenizer=model_id,
+            trust_remote_code=True,
             extra_kwargs={
                 "tensor_parallel_size": args.gpu_count,
                 "max_model_len": args.context_length,

@@ -33,6 +33,7 @@ def parse_args():
     parser.add_argument("--zero", action="store_true", help="Replace with zeros")
     parser.add_argument("--random_all", action="store_true", help="Shuffle actions with predicates")
     parser.add_argument("--use_10k", action="store_true", help="Use 10k tokens")
+    parser.add_argument("--replace_tokens", action="store_true", help="Replace tokens with 'term'")
     
     return parser.parse_args()
 
@@ -279,6 +280,7 @@ def process_rows(row_ids: list[int], rank: int, gpus_per_worker: int, args):
             k: np.concatenate(v, axis=0) for k, v in phrase_masks.items()
         }
         
+        
         combined_len = masks_combined[phrases[0]].shape[0] if phrases else 0
         
         
@@ -347,6 +349,17 @@ def process_rows(row_ids: list[int], rank: int, gpus_per_worker: int, args):
                 lambda x: add_hook(x.model.layers[layer], current_hook),
             )
         
+
+        if args.replace_tokens:
+            combined_tokens = np.concatenate([x.cpu().numpy() for x in all_tokens], axis=0)
+            # for tokens in all_tokens:
+            #     new_tokens = tokens.cpu().numpy()
+            for phrase in phrases:
+                combined_tokens = np.where(masks_combined[phrase] == 1, 4647, combined_tokens)
+            new_all_tokens = torch.from_numpy(combined_tokens)
+            all_tokens = new_all_tokens.split(steering_end, dim=0)
+
+
         # Create prompts for each row in batch
         prompts = [TokensPrompt(prompt_token_ids=tokens.tolist()) for tokens in all_tokens]
         

@@ -22,6 +22,8 @@ os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
 COMPUTE_DTYPE = torch.bfloat16
 DEVICE = 'cuda'
 MODEL_ID = "Qwen/QwQ-32B"
+model_type = "qwq"
+model_name = "qwq-32b"
 LAYERS = list(range(50))
 N_ROWS = 40
 CONT_SIZE = 100
@@ -50,7 +52,7 @@ def initialize_model_and_tokenizer():
 
 def load_dataset_from_file(domain_name, task_name):
     """Load dataset from a JSON file"""
-    prompt_dir = CUR_DIR / Path(f"./cot-planning/results/{domain_name}/qwq-32b-greedy/")
+    prompt_dir = CUR_DIR / Path(f"./cot-planning/results/{domain_name}/{model_name}-greedy/")
     with open(prompt_dir / f"{task_name}.json", 'r') as file:
         return json.load(file)
 
@@ -67,7 +69,7 @@ def load_datasets(domain_names, dataset_types):
     
     # Load datasets
     datasets = [
-        load_dataset(f"dmitriihook/qwq-32b-planning-{dataset_type}-greedy")["train"]
+        load_dataset(f"dmitriihook/{model_name}-planning-{dataset_type}-greedy")["train"]
         for dataset_type in dataset_types
     ]
     
@@ -141,7 +143,7 @@ def collect_hidden_states(ids, dataset, layers):
     hidden_states = defaultdict(dict)
     for idx in tqdm(ids):
         row = dataset[idx]
-        tokens = tokenize_blocksworld_generation(tokenizer, row)
+        tokens = tokenize_blocksworld_generation(tokenizer, row, model_type=model_type)
         with torch.no_grad():
             hs = model(tokens.to(DEVICE), output_hidden_states=True).hidden_states
             for layer in layers:
@@ -157,7 +159,7 @@ def extract_phrase_representations_batched(ids, dataset, positions_dataset, hidd
         row = dataset[idx]
         generation = row["generation"]
         text = generation.split("</think>")[0]
-        tokens = tokenize_blocksworld_generation(tokenizer, row, text)[0]
+        tokens = tokenize_blocksworld_generation(tokenizer, row, text, model_type=model_type)[0]
         end_pos = len(tokens)
 
         for phrase in phrases:

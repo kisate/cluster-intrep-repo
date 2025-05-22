@@ -19,12 +19,17 @@ def parse_args():
     parser.add_argument("--model_id", type=str, default="Qwen/QwQ-32B", help="Model ID")
     parser.add_argument("--output_path", type=str, default=None, help="Output file path")
     parser.add_argument("--n_workers", type=int, default=2, help="Number of workers to use")
-    parser.add_argument("--initial_lines", type=int, default=40, help="Initial number of lines to include")
     parser.add_argument("--target_layer", type=int, default=47, help="Target layer to apply the hook")
     parser.add_argument("--scale", type=float, default=1.0, help="Steering scale")
     parser.add_argument("--actions", action="store_true", help="Use actions only")
     parser.add_argument("--predicates", action="store_true", help="Use predicates only")
-    
+    parser.add_argument("--steering_start", type=int, default=1000, help="Steering start")
+    parser.add_argument("--steering_end", type=int, default=3000, help="Steering end")
+    parser.add_argument("--use_avg", action="store_true", help="Use average representation")
+    parser.add_argument("--random", action="store_true", help="Random actions")
+    parser.add_argument("--full_random", action="store_true", help="Random representations")
+    parser.add_argument("--only_phrase_tokens", action="store_true", help="Only steer on phrase tokens")
+    parser.add_argument("--use_10k", action="store_true", help="Use 10k token representations")
     return parser.parse_args()
 
 
@@ -35,7 +40,7 @@ def load_dataset_from_file(domain_name, task_name):
     with open(prompt_dir / f"{task_name}.json", 'r') as file:
         return json.load(file)
 
-def extract_all_phrase_positions(tokens, phrase, tokenizer, cot_only=True):
+def extract_all_phrase_positions(tokens, phrase, tokenizer, cot_only=True, steering_start=None, only_phrase_tokens=False):
     """Find end of the phrase token positions"""
     tokens = tokens.squeeze()
 
@@ -49,6 +54,10 @@ def extract_all_phrase_positions(tokens, phrase, tokenizer, cot_only=True):
     ]
 
     positions = set()
+
+    start_shift = -1
+    if only_phrase_tokens:
+        start_shift = 0
 
     if cot_only:
         start_pos = torch.where(tokens == 151667)[0]
@@ -64,8 +73,10 @@ def extract_all_phrase_positions(tokens, phrase, tokenizer, cot_only=True):
             presence_mask = presence_mask[:-1]
 
         for p in (torch.where(presence_mask)[0]).tolist():
+            if p < steering_start:
+                continue
             positions.add(
-                tuple([p-1, p + len(phts)])
+                tuple([p + start_shift, p + len(phts)])
             )        
     
     return sorted(list(set(positions)))
@@ -99,9 +110,24 @@ def create_hook(phrases, action_phrases, masks_batch_combined, mean_reprs, mean_
             
             steering_vector = mean_reprs[phrase] - adjustment
             steering_vector = steering_mask[:, None] * steering_vector
-            steering_vector = torch.tensor(steering_vector, dtype=hs.dtype, device=hs.device)
         
-            hs += steering_vector * scale
+            steering_mask = torch.tensor(steering_mask[:, None], dtype=torch.int32, device=hs.device)
+            steering_vector = torch.tensor(steering_vector, dtype=hs.dtype, device=hs.device)
+            
+            a = 1 / (1 + scale)
+            b = 1 - a
+
+            hs_norm = torch.norm(hs, dim=-1, keepdim=True)
+            
+            if scale > 0:
+                new_hs = hs * a + steering_vector * b
+                new_hs = new_hs / (torch.norm(new_hs, dim=-1, keepdim=True) + 1e-6) * hs_norm
+            else:
+                new_hs = hs
+            
+            hs = torch.where(steering_mask == 0, hs, new_hs)
+
+            # hs += steering_vector * scale
         return hs, res
     
     return hook
@@ -118,10 +144,13 @@ def process_rows(row_ids: list[int], rank: int, gpus_per_worker: int, args):
     
     model_id = args.model_id
     domain_number = args.domain_number
-    block_size = 4096
-    initial_lines = args.initial_lines
+    steering_start = args.steering_start
+    steering_end = args.steering_end
+    block_size = steering_end
     target_layer = args.target_layer
-    
+    use_avg = args.use_avg
+    only_phrase_tokens = args.only_phrase_tokens
+    use_10k = args.use_10k
     # Load tokenizer
     tokenizer = initialize_tokenizer(model_id)
     
@@ -130,12 +159,24 @@ def process_rows(row_ids: list[int], rank: int, gpus_per_worker: int, args):
     
     dataset = load_dataset(dataset_name)["train"]
     
-    # Load representations
-    repr_file = f"mystery_representations_greedy/mystery_{domain_number}/mean_reprs_mystery_{domain_number}.json"
+    repr_dir = "multilayer_7k"
+    if use_10k:
+        repr_dir = "multilayer_10k"
+
+    if use_avg:
+        if use_10k:
+            repr_file = f"multilayer_representations_avg/{repr_dir}/mystery_{domain_number}/mean_reprs_mystery_{domain_number}_10k_multi_layer.json"
+        else:
+            repr_file = f"multilayer_representations_avg/{repr_dir}/mystery_{domain_number}/mean_reprs_mystery_{domain_number}_multi_layer.json"
+    else:
+        if use_10k:
+            repr_file = f"multilayer_representations/{repr_dir}/mystery_{domain_number}/mean_reprs_mystery_{domain_number}_10k_multi_layer.json"
+        else:
+            repr_file = f"multilayer_representations/{repr_dir}/mystery_{domain_number}/mean_reprs_mystery_{domain_number}_multi_layer.json"
     
-        
     with open(repr_file, 'r') as f:
-        reprs = json.load(f)
+        reprs = json.load(f)[f"{target_layer}"]
+    
     
     mean_reprs = {k: np.array(v) for k, v in reprs["mean_reprs"].items()}
     mean_actions = np.array(reprs["mean_actions"])
@@ -159,7 +200,10 @@ def process_rows(row_ids: list[int], rank: int, gpus_per_worker: int, args):
         tensor_parallel_size=gpus_per_worker, 
         enforce_eager=True, 
         max_seq_len_to_capture=20000, 
-        max_num_batched_tokens=4096,
+        max_num_batched_tokens=block_size,
+        max_num_seqs=400,
+        gpu_memory_utilization=0.95, 
+        enable_prefix_caching=False
     )
     
     # Setup sampling parameters
@@ -170,74 +214,123 @@ def process_rows(row_ids: list[int], rank: int, gpus_per_worker: int, args):
         seed=0,
     )
     
-    all_tokens = []
-    phrase_masks = {phrase: [] for phrase in phrases}
+    results = []
     
-    for i in row_ids:
-        row = dataset[i]
+    chunk_size = 150
+    
+    chunks = [
+        row_ids[i:i + chunk_size] for i in range(0, len(row_ids), chunk_size)
+    ]
+    
+    for _row_ids in chunks:
+        all_tokens = []
+        phrase_masks = {phrase: [] for phrase in phrases}
         
-        # Process text
-        text = "\n\n".join(row["generation"].split("\n\n")[:initial_lines])
-        tokens = tokenize_blocksworld_generation(tokenizer, row, text)[:, :-2][0]
-        all_tokens.append(tokens)
+        for i in _row_ids:
+            row = dataset[i]
+            
+            # Process text
+            # text = "\n\n".join(row["generation"].split("\n\n")[:initial_lines])
+            tokens = tokenize_blocksworld_generation(tokenizer, row)[:, :-2][0]
+            tokens = tokens[:steering_end]
+            all_tokens.append(tokens)
+            
+            # Get phrase positions for this row
+            phrase_positions = {
+                phrase: extract_all_phrase_positions(tokens, phrase, tokenizer, cot_only=False, steering_start=steering_start, only_phrase_tokens=only_phrase_tokens)
+                for phrase in phrases
+            }
+            
+            # Create phrase masks for this row
+            row_phrase_masks = {
+                phrase: np.zeros(tokens.shape[0])
+                for phrase in phrases
+            }
+            
+            for phrase in phrases:
+                positions = phrase_positions[phrase]
+                for start, end in positions:
+                    row_phrase_masks[phrase][start:end] = 1
+            
+            # Add masks to batch
+            for phrase in phrases:
+                phrase_masks[phrase].append(row_phrase_masks[phrase])
         
-        # Get phrase positions for this row
-        phrase_positions = {
-            phrase: extract_all_phrase_positions(tokens, phrase, tokenizer, cot_only=False)
-            for phrase in phrases
+        masks_combined = {
+            k: np.concatenate(v, axis=0) for k, v in phrase_masks.items()
         }
         
-        # Create phrase masks for this row
-        row_phrase_masks = {
-            phrase: np.zeros(tokens.shape[0])
-            for phrase in phrases
-        }
+        combined_len = masks_combined[phrases[0]].shape[0] if phrases else 0
+
+        predicate_phrases = [x for x in phrases if x not in action_phrases]
+
+        if args.random:
+            shuffled_actions = action_phrases.copy()
+            np.random.shuffle(shuffled_actions)
+            
+            shuffled_predicates = predicate_phrases.copy()
+            np.random.shuffle(shuffled_predicates)
+
+            shuffled_mapping = {
+                action_phrases[i]: shuffled_actions[i] for i in range(len(action_phrases))
+            }
+
+            for i in range(len(predicate_phrases)):
+                shuffled_mapping[predicate_phrases[i]] = shuffled_predicates[i]
+                
+            masks_combined = {
+                shuffled_mapping[k]: v for k, v in masks_combined.items()
+            }
+            
+            # phrases = list(shuffled_mapping.values())
+
+        if args.full_random:
+            action_reprs = np.stack([v for k, v in mean_reprs.items() if k in action_phrases])
+            predicate_reprs = np.stack([v for k, v in mean_reprs.items() if k in predicate_phrases])
+
+            actions_mean = np.mean(action_reprs, axis=0)
+            predicates_mean = np.mean(predicate_reprs, axis=0)
+
+            actions_std = np.std(action_reprs, axis=0)
+            predicates_std = np.std(predicate_reprs, axis=0)
+
+            mean_reprs = {
+                **{k: np.random.normal(actions_mean, actions_std) for k in action_phrases},
+                **{k: np.random.normal(predicates_mean, predicates_std) for k in predicate_phrases},
+            }
+            
+        # Create a hook function using the factory
+        current_hook = create_hook(
+            phrases=phrases,
+            action_phrases=action_phrases,
+            masks_batch_combined=masks_combined,
+            mean_reprs=mean_reprs,
+            mean_actions=mean_actions,
+            mean_predicates=mean_predicates,
+            combined_len=combined_len,
+            block_size=block_size,
+            scale=args.scale / 2,
+        )
         
-        for phrase in phrases:
-            positions = phrase_positions[phrase]
-            for start, end in positions:
-                row_phrase_masks[phrase][start:end] = 1
+        # Apply hook to model
         
-        # Add masks to batch
-        for phrase in phrases:
-            phrase_masks[phrase].append(row_phrase_masks[phrase])
-    
-    masks_combined = {
-        k: np.concatenate(v, axis=0) for k, v in phrase_masks.items()
-    }
-    
-    combined_len = masks_combined[phrases[0]].shape[0] if phrases else 0
-    
-    
-    # Create a hook function using the factory
-    current_hook = create_hook(
-        phrases=phrases,
-        action_phrases=action_phrases,
-        masks_batch_combined=masks_combined,
-        mean_reprs=mean_reprs,
-        mean_actions=mean_actions,
-        mean_predicates=mean_predicates,
-        combined_len=combined_len,
-        block_size=block_size,
-        scale=args.scale,
-    )
-    
-    # Apply hook to model
-    llm.apply_model(
-        lambda x: add_hook(x.model.layers[target_layer], current_hook),
-    )
-    
-    # Create prompts for each row in batch
-    prompts = [TokensPrompt(prompt_token_ids=tokens.tolist()) for tokens in all_tokens]
-    
-    # Generate
-    results = llm.generate(prompts, sampling_params=sampling_params)
+
+        llm.llm_engine.collective_rpc(
+            lambda x: add_hook(x.worker.model_runner.model.model.layers[target_layer], current_hook),
+        )
+        
+        # Create prompts for each row in batch
+        prompts = [TokensPrompt(prompt_token_ids=tokens.tolist()) for tokens in all_tokens]
+        
+        # Generate
+        results.extend(llm.generate(prompts, sampling_params=sampling_params))
     
     output_path = Path(args.output_path) / f"worker_results/{rank}.json"
     
     json_results = [
         {
             "idx": row_ids[i],
+            "copy": i % 3,
             "steered_generation": results[i].outputs[0].text,
             "original_input": dataset[row_ids[i]]["generation"],
         }
@@ -253,16 +346,13 @@ def process_rows(row_ids: list[int], rank: int, gpus_per_worker: int, args):
 
 def main():
     args = parse_args()
-    n_workers = args.n_workers
+    n_workers = 1
     n_rows = args.num_rows
     
     total_available_gpus = torch.cuda.device_count()
-    gpus_per_worker = total_available_gpus // n_workers
+    # gpus_per_worker = total_available_gpus // n_workers
     
-    if gpus_per_worker == 0:
-        raise ValueError("Not enough GPUs available for the number of workers.")
-    
-    rows_per_worker = n_rows // n_workers
+    rows_per_worker = n_rows
     
     # Create a list of row IDs for each worker
     row_ids = [list(range(i * rows_per_worker, (i + 1) * rows_per_worker)) for i in range(n_workers)]
@@ -275,31 +365,10 @@ def main():
     # Create output path if not specified
     if args.output_path is None:
         args.output_path = f"./results/mystery_{args.domain_number}/qwq-32b"
-    
-    print(f"Processing {n_rows} rows with {n_workers} workers ({gpus_per_worker} GPUs per worker)")
-    print(f"Using {args.initial_lines} initial lines and targeting layer {args.target_layer}")
-    
-    # Import multiprocessing here to avoid issues with CUDA initialization
-    import torch.multiprocessing as mp
-    
-    # # Start multiprocessing pool
-    mp.set_start_method('spawn', force=True)
-    
+        
     # process_rows(row_ids[0], 0, gpus_per_worker, args)
-    
-    # Create processes
-    processes = []
-    for rank in range(n_workers):
-        p = mp.Process(
-            target=process_rows,
-            args=(row_ids[rank], rank, gpus_per_worker, args)
-        )
-        p.start()
-        processes.append(p)
-    
-    # Wait for all processes to complete
-    for p in processes:
-        p.join()
+   
+    process_rows(row_ids[0], 0, total_available_gpus, args)
     
     # Combine results from all workers
     all_results = []

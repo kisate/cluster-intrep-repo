@@ -134,18 +134,28 @@ def initialize_tokenizer(model_id) -> AutoTokenizer:
 
     return tokenizer
 
-def tokenize_blocksworld_generation(tokenizer, row, generation=None):
+def tokenize_blocksworld_generation(tokenizer, row, generation=None, model_type="qwq"):
     if generation is None:
         generation = row["generation"]
     query = row["distilabel_metadata"]["raw_input_text_generation_0"][0]
 
-    messages = [
-        query,
-        {"role": "assistant", "content": "<think>\n"+generation}
-    ]
+    if model_type == "qwq":
+        messages = [
+            query,
+            {"role": "assistant", "content": "<think>\n"+generation}
+        ]
+    elif model_type == "nemotron":
+        messages = [
+            {"role": "system", "content": f"detailed thinking on"},
+            query,
+            {"role": "assistant", "content": generation}
+        ]
+
+
     chat    = tokenizer.apply_chat_template(messages, tokenize=True, add_generation_prompt=False, return_tensors="pt")
 
     return chat
+
 
 # Phrases to steer with
 DOMAIN_PHRASES = {

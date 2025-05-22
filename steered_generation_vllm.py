@@ -30,6 +30,7 @@ def parse_args():
     parser.add_argument("--full_random", action="store_true", help="Random representations")
     parser.add_argument("--only_phrase_tokens", action="store_true", help="Only steer on phrase tokens")
     parser.add_argument("--use_10k", action="store_true", help="Use 10k token representations")
+    parser.add_argument("--rows_start", type=int, default=0, help="Rows start")
     return parser.parse_args()
 
 
@@ -347,7 +348,7 @@ def main():
     args = parse_args()
     n_workers = args.n_workers
     n_rows = args.num_rows
-    
+    rows_start = args.rows_start
     total_available_gpus = torch.cuda.device_count()
     gpus_per_worker = total_available_gpus // n_workers
     
@@ -357,7 +358,7 @@ def main():
     rows_per_worker = n_rows // n_workers
     
     # Create a list of row IDs for each worker
-    row_ids = [list(range(i * rows_per_worker, (i + 1) * rows_per_worker)) for i in range(n_workers)]
+    row_ids = [list(range(rows_start + i * rows_per_worker, rows_start + (i + 1) * rows_per_worker)) for i in range(n_workers)]
     
     # Handle remaining rows if n_rows is not perfectly divisible by n_workers
     remainder = n_rows % n_workers
