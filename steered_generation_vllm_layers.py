@@ -185,10 +185,6 @@ def make_mean_reprs(reprs, domain_reprs, args, layer, shuffled_mapping, action_p
     mean_actions = -np.array(domain_reprs[f"{layer}"]["mean_actions"])
     mean_predicates = -np.array(domain_reprs[f"{layer}"]["mean_predicates"])
 
-    mean_reprs = {k: np.array(v) for k, v in reprs[f"{layer}"]["mean_reprs"].items()}
-    mean_actions = -np.array(domain_reprs[f"{layer}"]["mean_actions"])
-    mean_predicates = -np.array(domain_reprs[f"{layer}"]["mean_predicates"])
-
     if args.random:
         mean_reprs = {k: mean_reprs[shuffled_mapping[k]] for k in mean_reprs}
 
@@ -260,7 +256,7 @@ def process_rows(row_ids: list[int], rank: int, gpus_per_worker: int, args):
     
     # Load representations
     repr_file = f"multilayer_representations_avg/multilayer_7k/mystery_{domain_number}/mean_reprs_mystery_{domain_number}_multi_layer.json"
-    domain_repr_file = f"multilayer_representations/multilayer_7k/mystery_{domain_number}/mean_reprs_mystery_{domain_number}_multi_layer.json"
+    domain_repr_file = f"multilayer_representations_avg_new/multilayer_7k/mystery_{domain_number}/mean_reprs_mystery_{domain_number}_multi_layer.json"
         
     with open(repr_file, 'r') as f:
         reprs = json.load(f)
