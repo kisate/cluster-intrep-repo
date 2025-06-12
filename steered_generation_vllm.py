@@ -216,7 +216,7 @@ def process_rows(row_ids: list[int], rank: int, gpus_per_worker: int, args):
     
     results = []
     
-    chunk_size = 150
+    chunk_size = 100
     
     chunks = [
         row_ids[i:i + chunk_size] for i in range(0, len(row_ids), chunk_size)

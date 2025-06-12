@@ -2,6 +2,12 @@ import json
 
 from pathlib import Path
 
+layer = 30
+scale = "1"
+start_t = 1000
+end_t = 2500
+steering = True
+
 def main_gl(mystery_n, copy_n=None, suffix=""):
     from_intermediate = False
     domain = f"blocksworld_mystery_{mystery_n}"
@@ -14,7 +20,13 @@ def main_gl(mystery_n, copy_n=None, suffix=""):
         out_suffix = ""
 
     if not from_intermediate:
-        file_path = f"results/mystery_steered_end_t_1000_2500_s_1_l_44_fix_rescale{in_suffix}/steered_results_mystery_{mystery_n}.json"
+        if steering:
+            if scale == "0":
+                file_path = f"results/mystery_steered_300_t_{start_t}_{end_t}_s_{scale}_fix_rescale{in_suffix}/steered_results_mystery_{mystery_n}.json"
+            else:
+                file_path = f"results/mystery_steered_300_t_{start_t}_{end_t}_s_{scale}_l_{layer}_fix_rescale{in_suffix}/steered_results_mystery_{mystery_n}.json"
+        else:
+            file_path = f"results/mystery_steered_end_t_{start_t}_{end_t}_s_0_fix_rescale{in_suffix}/steered_results_mystery_{mystery_n}.json"
         dataset = json.load(open(file_path, "r"))
     else:
         path = Path("intermediate_results/intermediate_results_9_full")
@@ -89,9 +101,15 @@ def main_gl(mystery_n, copy_n=None, suffix=""):
             suffix = f"_{copy_n}"
         
         if steered_generation:
-            final_dir = Path(f"cot-planning/responses/{formatted_json['domain']}/qwq-32b-steered-full-end-1000-2500-1-l-44-fix-rescale{out_suffix}{suffix}/")
+            if scale == "0":
+                final_dir = Path(f"cot-planning/responses/{formatted_json['domain']}/qwq-32b-steered-full-300-{start_t}-{end_t}-{scale}-fix-rescale{out_suffix}{suffix}/")
+            else:
+                final_dir = Path(f"cot-planning/responses/{formatted_json['domain']}/qwq-32b-steered-full-300-{start_t}-{end_t}-{scale}-l-{layer}-fix-rescale{out_suffix}{suffix}/")
         else:
-            final_dir = Path(f"cot-planning/responses/{formatted_json['domain']}/qwq-32b-original-full-end-1000-2500-1-l-44-fix-rescale{out_suffix}{suffix}/")
+            if scale == "0":
+                final_dir = Path(f"cot-planning/responses/{formatted_json['domain']}/qwq-32b-original-full-300-{start_t}-{end_t}-{scale}-fix-rescale{out_suffix}{suffix}/")
+            else:
+                final_dir = Path(f"cot-planning/responses/{formatted_json['domain']}/qwq-32b-original-full-300-{start_t}-{end_t}-{scale}-l-{layer}-fix-rescale{out_suffix}{suffix}/")
             
 
         final_dir.mkdir(parents=True, exist_ok=True)
