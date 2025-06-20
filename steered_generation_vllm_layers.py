@@ -34,7 +34,11 @@ def parse_args():
     parser.add_argument("--random_all", action="store_true", help="Shuffle actions with predicates")
     parser.add_argument("--use_10k", action="store_true", help="Use 10k tokens")
     parser.add_argument("--replace_tokens", action="store_true", help="Replace tokens with 'term'")
-    
+    parser.add_argument("--row_start", type=int, default=0, help="Row start")
+    parser.add_argument("--scale", type=float, default=1.0, help="Scale factor")
+    parser.add_argument("--soft_tokens", action="store_true", help="Use soft tokens")
+    parser.add_argument("--only_embeddings", action="store_true", help="Only use embeddings")
+
     return parser.parse_args()
 
 
@@ -82,7 +86,7 @@ def extract_all_phrase_positions(tokens, phrase, tokenizer, cot_only=True, steer
     
     return sorted(list(set(positions)))
 
-def create_hook(phrases, action_phrases, masks_batch_combined, mean_reprs, mean_actions, mean_predicates, combined_len, block_size=4096, no_steering=False, logging_file=None):
+def create_hook(phrases, action_phrases, masks_batch_combined, mean_reprs, mean_actions, mean_predicates, combined_len, block_size=4096, no_steering=False, logging_file=None, scale=1.0):
     def hook(module, input, output):
         meta = getattr(module, "_meta", {})
         meta["mask_offset"] = meta.get("mask_offset", 0)
@@ -99,15 +103,6 @@ def create_hook(phrases, action_phrases, masks_batch_combined, mean_reprs, mean_
         module._meta = meta
         
         hs, res = output
-
-        # if logging_file is not None:
-        #     with open(logging_file, "a") as f:
-        #         f.write(f"hs.shape: {hs.shape}\n")
-        #         f.write(f"mask_start: {mask_start}\n")
-        #         f.write(f"mask_end: {mask_end}\n")
-        #         f.write(f"meta['mask_offset']: {meta['mask_offset']}\n")
-        #         f.write(f"device: {hs.device}\n")
-        #         f.write(f"input: {input[0].cpu().numpy().tolist()}\n")
                  
         for ip, phrase in enumerate(phrases):
             if phrase in action_phrases:
@@ -118,9 +113,8 @@ def create_hook(phrases, action_phrases, masks_batch_combined, mean_reprs, mean_
             steering_mask = masks_batch_combined[phrase]
             
             steering_mask = steering_mask[mask_start:mask_end]
-            # steering_mask = np.concatenate([steering_mask, np.zeros(hs.shape[0] - steering_mask.shape[0])], axis=0)
             
-            steering_vector = mean_reprs[phrase] * 9 - adjustment
+            steering_vector = mean_reprs[phrase] * scale - adjustment
             steering_vector = steering_mask[:, None] * steering_vector
         
             steering_mask = torch.tensor(steering_mask[:, None], dtype=torch.int32, device=hs.device)
@@ -129,10 +123,6 @@ def create_hook(phrases, action_phrases, masks_batch_combined, mean_reprs, mean_
             if no_steering:
                 hs = torch.where(steering_mask == 0, hs, hs)
             else:
-                # scale = 0.5
-                # a = 1 / ( 1 + scale)
-                # b = 1 - a
-    
                 hs_norm = torch.norm(hs, dim=-1, keepdim=True)
                 steering_vector = steering_vector / (torch.norm(steering_vector, dim=-1, keepdim=True) + 1e-6) * hs_norm
 
@@ -141,10 +131,98 @@ def create_hook(phrases, action_phrases, masks_batch_combined, mean_reprs, mean_
     
     return hook
 
+def create_soft_tokens_hook(phrases, action_phrases, masks_batch_combined, mean_reprs, mean_actions, mean_predicates, combined_len, block_size=4096, no_steering=False, logging_file=None, scale=1.0):
+    def hook(module, input, output):
+        meta = getattr(module, "_meta", {})
+        meta["mask_offset"] = meta.get("mask_offset", 0)
+        
+        if meta["mask_offset"] >= combined_len:
+            module._meta = {}
+            module._forward_hooks = OrderedDict()
+            return output
+        
+        mask_start = meta["mask_offset"]
+        mask_end = mask_start + block_size
+        
+        meta["mask_offset"] = mask_end
+        module._meta = meta
+
+        hs = output
+                 
+        for ip, phrase in enumerate(phrases):
+            if phrase in action_phrases:
+                adjustment = mean_actions
+            else:
+                adjustment = mean_predicates
+            
+            steering_mask = masks_batch_combined[phrase]
+            
+            steering_mask = steering_mask[mask_start:mask_end]
+            
+            steering_vector = mean_reprs[phrase] * scale - adjustment
+            steering_vector = steering_mask[:, None] * steering_vector
+        
+            steering_mask = torch.tensor(steering_mask[:, None], dtype=torch.int32, device=hs.device)
+            steering_vector = torch.tensor(steering_vector, dtype=hs.dtype, device=hs.device)
+            
+            if no_steering:
+                hs = torch.where(steering_mask == 0, hs, hs)
+            else:
+                hs_norm = torch.norm(hs, dim=-1, keepdim=True)
+                steering_vector = steering_vector / (torch.norm(steering_vector, dim=-1, keepdim=True) + 1e-6) * hs_norm
+
+                hs = torch.where(steering_mask == 0, hs, steering_vector)
+        return hs
+    
+    return hook
 def add_hook(module, hook_fn):
     module._forward_hooks = OrderedDict()
     module._meta = {}
     module.register_forward_hook(hook_fn)
+
+def make_mean_reprs(reprs, domain_reprs, args, layer, shuffled_mapping, action_phrases, predicate_phrases, phrases):
+    mean_reprs = {k: np.array(v) for k, v in reprs[f"{layer}"]["mean_reprs"].items()}
+    mean_actions = -np.array(domain_reprs[f"{layer}"]["mean_actions"])
+    mean_predicates = -np.array(domain_reprs[f"{layer}"]["mean_predicates"])
+
+    if args.random:
+        mean_reprs = {k: mean_reprs[shuffled_mapping[k]] for k in mean_reprs}
+
+    if args.random_all:
+        mean_reprs = {k: mean_reprs[shuffled_mapping[k]] for k in mean_reprs}
+
+    if args.mean_only:
+        actions_mean = np.stack(
+            [v for k, v in mean_reprs.items() if k in action_phrases]
+        ).mean(axis=0)
+        predicates_mean = np.stack(
+            [v for k, v in mean_reprs.items() if k in predicate_phrases]
+        ).mean(axis=0)
+
+        mean_reprs = {k: actions_mean if k in action_phrases else predicates_mean for k in phrases}
+
+    if args.zero:
+        mean_reprs = {k: np.zeros_like(v) for k, v in mean_reprs.items()}
+
+    if args.real_random:
+        actions_mean = np.stack(
+            [v for k, v in mean_reprs.items() if k in action_phrases]
+        ).mean(axis=0)
+        predicates_mean = np.stack(
+            [v for k, v in mean_reprs.items() if k in predicate_phrases]
+        ).mean(axis=0)
+
+        actions_std = np.stack(
+            [v for k, v in mean_reprs.items() if k in action_phrases]
+        ).std(axis=0)
+        predicates_std = np.stack(
+            [v for k, v in mean_reprs.items() if k in predicate_phrases]
+        ).std(axis=0)
+
+        mean_reprs = {k: np.random.normal(actions_mean, actions_std) if k in action_phrases else np.random.normal(predicates_mean, predicates_std) for k in phrases}
+
+
+    return mean_reprs, mean_actions, mean_predicates
     
     
 def process_rows(row_ids: list[int], rank: int, gpus_per_worker: int, args):
@@ -167,7 +245,7 @@ def process_rows(row_ids: list[int], rank: int, gpus_per_worker: int, args):
     start_layer = args.start_layer
     end_layer = args.end_layer
     block_size = steering_end
-    
+    scale = args.scale
     # Load tokenizer
     tokenizer = initialize_tokenizer(model_id)
     
@@ -178,7 +256,7 @@ def process_rows(row_ids: list[int], rank: int, gpus_per_worker: int, args):
     
     # Load representations
     repr_file = f"multilayer_representations_avg/multilayer_7k/mystery_{domain_number}/mean_reprs_mystery_{domain_number}_multi_layer.json"
-    domain_repr_file = f"multilayer_representations/multilayer_7k/mystery_{domain_number}/mean_reprs_mystery_{domain_number}_multi_layer.json"
+    domain_repr_file = f"multilayer_representations_avg_new/multilayer_7k/mystery_{domain_number}/mean_reprs_mystery_{domain_number}_multi_layer.json"
         
     with open(repr_file, 'r') as f:
         reprs = json.load(f)
@@ -226,6 +304,8 @@ def process_rows(row_ids: list[int], rank: int, gpus_per_worker: int, args):
     ]
 
     predicate_phrases = [x for x in phrases if x not in action_phrases]
+
+    shuffled_mapping = None
 
     if args.random:
         shuffled_action_phrases = action_phrases.copy()
@@ -283,56 +363,36 @@ def process_rows(row_ids: list[int], rank: int, gpus_per_worker: int, args):
         
         combined_len = masks_combined[phrases[0]].shape[0] if phrases else 0
         
-        
-        for layer in range(start_layer, end_layer + 1):
-             
-            mean_reprs = {k: np.array(v) for k, v in reprs[f"{layer}"]["mean_reprs"].items()}
-            mean_actions = -np.array(domain_reprs[f"{layer}"]["mean_actions"])
-            mean_predicates = -np.array(domain_reprs[f"{layer}"]["mean_predicates"])
+        if not args.only_embeddings:
+            for layer in range(start_layer, end_layer + 1):
+                mean_reprs, mean_actions, mean_predicates = make_mean_reprs(reprs, domain_reprs, args, layer, shuffled_mapping, action_phrases, predicate_phrases, phrases)
 
-            if args.random:
-                mean_reprs = {k: mean_reprs[shuffled_mapping[k]] for k in mean_reprs}
 
-            if args.random_all:
-                mean_reprs = {k: mean_reprs[shuffled_mapping[k]] for k in mean_reprs}
-
-            if args.mean_only:
-                actions_mean = np.stack(
-                    [v for k, v in mean_reprs.items() if k in action_phrases]
-                ).mean(axis=0)
-                predicates_mean = np.stack(
-                    [v for k, v in mean_reprs.items() if k in predicate_phrases]
-                ).mean(axis=0)
-
-                mean_reprs = {k: actions_mean if k in action_phrases else predicates_mean for k in phrases}
-
-            if args.zero:
-                mean_reprs = {k: np.zeros_like(v) for k, v in mean_reprs.items()}
-
-            if args.real_random:
-                actions_mean = np.stack(
-                    [v for k, v in mean_reprs.items() if k in action_phrases]
-                ).mean(axis=0)
-                predicates_mean = np.stack(
-                    [v for k, v in mean_reprs.items() if k in predicate_phrases]
-                ).mean(axis=0)
-
-                actions_std = np.stack(
-                    [v for k, v in mean_reprs.items() if k in action_phrases]
-                ).std(axis=0)
-                predicates_std = np.stack(
-                    [v for k, v in mean_reprs.items() if k in predicate_phrases]
-                ).std(axis=0)
-
-                mean_reprs = {k: np.random.normal(actions_mean, actions_std) if k in action_phrases else np.random.normal(predicates_mean, predicates_std) for k in phrases}
+                logging_file = f"{args.output_path}/worker_results/{layer}.txt"
+                Path(logging_file).parent.mkdir(parents=True, exist_ok=True)
                 
+                current_hook = create_hook(
+                    phrases=phrases,
+                    action_phrases=action_phrases,
+                    masks_batch_combined=masks_combined,
+                    mean_reprs=mean_reprs,
+                    mean_actions=mean_actions,
+                    mean_predicates=mean_predicates,
+                    combined_len=combined_len,
+                    block_size=block_size,
+                    no_steering=no_steering,
+                    logging_file=logging_file,
+                    scale=scale
+                )
+                # Apply hook to model
+                llm.apply_model(
+                    lambda x: add_hook(x.model.layers[layer], current_hook),
+                )
+        
+        if args.soft_tokens:
+            mean_reprs, mean_actions, mean_predicates = make_mean_reprs(reprs, domain_reprs, args, 44, shuffled_mapping, action_phrases, predicate_phrases, phrases)
 
-
-
-            logging_file = f"{args.output_path}/worker_results/{layer}.txt"
-            Path(logging_file).parent.mkdir(parents=True, exist_ok=True)
-            
-            current_hook = create_hook(
+            current_hook = create_soft_tokens_hook(
                 phrases=phrases,
                 action_phrases=action_phrases,
                 masks_batch_combined=masks_combined,
@@ -342,13 +402,13 @@ def process_rows(row_ids: list[int], rank: int, gpus_per_worker: int, args):
                 combined_len=combined_len,
                 block_size=block_size,
                 no_steering=no_steering,
-                logging_file=logging_file
+                logging_file=logging_file,
+                scale=scale
             )
-            # Apply hook to model
+
             llm.apply_model(
-                lambda x: add_hook(x.model.layers[layer], current_hook),
+                lambda x: add_hook(x.model.embed_tokens, current_hook),
             )
-        
 
         if args.replace_tokens:
             combined_tokens = np.concatenate([x.cpu().numpy() for x in all_tokens], axis=0)
@@ -389,7 +449,7 @@ def main():
     args = parse_args()
     n_workers = args.n_workers
     n_rows = args.num_rows
-    
+    row_start = args.row_start
     total_available_gpus = torch.cuda.device_count()
     gpus_per_worker = total_available_gpus // n_workers
     
@@ -399,7 +459,7 @@ def main():
     rows_per_worker = n_rows // n_workers
     
     # Create a list of row IDs for each worker
-    row_ids = [list(range(i * rows_per_worker, (i + 1) * rows_per_worker)) for i in range(n_workers)]
+    row_ids = [list(range(i * rows_per_worker + row_start, (i + 1) * rows_per_worker + row_start)) for i in range(n_workers)]
     
     # Handle remaining rows if n_rows is not perfectly divisible by n_workers
     remainder = n_rows % n_workers
