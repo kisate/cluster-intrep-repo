@@ -715,7 +715,7 @@ def process_mystery_domain(mystery_num, mean_reprs_clean, mean_clean_actions, me
         collect_correct_ids(er) for er in eval_results
     ]
     
-    steps_mystery = list(range(1000, 15000, 200))
+    steps_mystery = list(range(1000, 2000, 200))
     
     # Collect hidden states for mystery domain
     hidden_states_mystery = collect_hidden_states(correct_ids[1], datasets[1], LAYERS)
@@ -741,7 +741,7 @@ def main():
     initialize_model_and_tokenizer()
     
     # Create output directory
-    output_dir = "./multilayer_representations/multilayer_15k"
+    output_dir = "./multilayer_representations/multilayer_2k"
     os.makedirs(output_dir, exist_ok=True)
     
     # Process mystery domain 2 as clean representations first
@@ -779,7 +779,7 @@ def main():
         ]
         
         # Set steps for phrase extraction
-        steps_clean = list(range(1000, 15000, 200))
+        steps_clean = list(range(1000, 2000, 200))
         
         # Collect hidden states for clean domain
         hidden_states_clean = collect_hidden_states(correct_ids[0], datasets[0], LAYERS)
