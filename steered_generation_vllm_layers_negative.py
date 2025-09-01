@@ -4,6 +4,10 @@ import torch
 import json
 import numpy as np
 import argparse
+import signal
+import sys
+import atexit
+import gc
 from transformers import AutoTokenizer
 from tqdm.auto import tqdm
 from datasets import load_dataset
@@ -11,6 +15,37 @@ from utils import initialize_tokenizer, tokenize_blocksworld_generation, DOMAIN_
 from collections import OrderedDict
 from vllm import TokensPrompt, SamplingParams, LLM
 from pathlib import Path
+
+def cleanup_gpu():
+    """Comprehensive GPU cleanup function"""
+    try:
+        # Clear PyTorch cache
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+            # Reset all devices
+            for i in range(torch.cuda.device_count()):
+                with torch.cuda.device(i):
+                    torch.cuda.empty_cache()
+                    torch.cuda.synchronize()
+        
+        # Force garbage collection
+        gc.collect()
+        
+        # Try to reset CUDA context (may not work in all cases)
+        try:
+            torch.cuda.reset_peak_memory_stats()
+        except:
+            pass
+            
+    except Exception as e:
+        print(f"Error during GPU cleanup: {e}")
+
+def signal_handler(signum, frame):
+    """Handle signals for graceful shutdown"""
+    print(f"Received signal {signum}, cleaning up...")
+    cleanup_gpu()
+    sys.exit(0)
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Run VLLM on specified mystery domain")
@@ -149,9 +184,14 @@ def make_mean_reprs(reprs, domain_reprs, early_reprs, args, layer, shuffled_mapp
     }
     early_centered_reprs = {k: early_mean_reprs[k] - early_adjustments[k] for k in early_mean_reprs}
 
+    # mean_reprs = {
+    #     k: centered_reprs[k] - early_centered_reprs[k] for k in mean_reprs
+    # }
+
     mean_reprs = {
-        k: centered_reprs[k] - early_centered_reprs[k] for k in mean_reprs
+        k: centered_reprs[k] for k in mean_reprs
     }
+
 
     if args.random:
         mean_reprs = {k: mean_reprs[shuffled_mapping[k]] for k in mean_reprs}
@@ -184,6 +224,14 @@ def make_mean_reprs(reprs, domain_reprs, early_reprs, args, layer, shuffled_mapp
     
     
 def process_rows(row_ids: list[int], rank: int, gpus_per_worker: int, args):
+    """Enhanced process_rows with better cleanup"""
+    # Register signal handlers for this process
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+    
+    # Register cleanup function to run on exit
+    atexit.register(cleanup_gpu)
+
     gpu_ids = list(range(rank * gpus_per_worker, (rank + 1) * gpus_per_worker))
     os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, gpu_ids))
     
@@ -246,7 +294,8 @@ def process_rows(row_ids: list[int], rank: int, gpus_per_worker: int, args):
         max_seq_len_to_capture=20000, 
         max_num_batched_tokens=block_size,
         max_num_seqs=400,
-        gpu_memory_utilization=0.95
+        gpu_memory_utilization=0.95,
+        distributed_executor_backend="mp"
     )
     
     # Setup sampling parameters
@@ -369,7 +418,8 @@ def process_rows(row_ids: list[int], rank: int, gpus_per_worker: int, args):
     
     with open(output_path, 'w') as f:
         json.dump(json_results, f, indent=2)
-        
+    
+    cleanup_gpu()
 
 
 def main():

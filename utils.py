@@ -159,6 +159,21 @@ def tokenize_blocksworld_generation(tokenizer, row, generation=None, model_type=
 
 # Phrases to steer with
 DOMAIN_PHRASES = {
+    "clean": {
+        "actions": {
+            "attack": "pick up",
+            "succumb": "put down",
+            "overcome": "stack",
+            "feast": "unstack"
+        },
+        "predicates": {
+            "planet": "ontable",
+            "province": "clear",
+            "harmony": "handempty",
+            "craves": "holding",
+            "pain": "holding"
+        }
+    },
     "mystery_1": {
         "actions": {
             "attack": "attack",

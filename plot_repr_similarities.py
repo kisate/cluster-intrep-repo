@@ -26,7 +26,7 @@ os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
 COMPUTE_DTYPE = torch.bfloat16
 DEVICE = 'cuda'
 MODEL_ID = "Qwen/QwQ-32B"
-LAYER = 47
+LAYER = 44
 N_ROWS = 40
 CONT_SIZE = 100
 
@@ -218,7 +218,7 @@ def make_mean_reprs(reprs, phrases, steps, n_last=3, offset=1):
     return {k: np.stack(v, axis=0).mean(axis=0) if v else None for k, v in mean_reprs.items()}
 
 
-LAYERS = [0, 4, 8, 15, 22, 26, 31, 35, 40, 44, 47]
+LAYERS = [30, 40]
 
 initialize_model_and_tokenizer()
 

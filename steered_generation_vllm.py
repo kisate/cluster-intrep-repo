@@ -175,6 +175,8 @@ def process_rows(row_ids: list[int], rank: int, gpus_per_worker: int, args):
         else:
             repr_file = f"multilayer_representations/{repr_dir}/mystery_{domain_number}/mean_reprs_mystery_{domain_number}_multi_layer.json"
     
+    print(f"Loading representations from {repr_file}")
+    
     with open(repr_file, 'r') as f:
         reprs = json.load(f)[f"{target_layer}"]
     

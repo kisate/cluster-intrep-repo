@@ -2,10 +2,10 @@ import json
 
 from pathlib import Path
 
-layer = 30
-scale = "2"
-start_t = 2000
-end_t = 4000
+layer = 44
+scale = "1"
+start_t = 1000
+end_t = 2500
 steering = True
 
 def main_gl(mystery_n, copy_n=None, suffix=""):
@@ -22,11 +22,16 @@ def main_gl(mystery_n, copy_n=None, suffix=""):
     if not from_intermediate:
         if steering:
             if scale == "0":
-                file_path = f"results/mystery_steered_neg_2000_end_t_{start_t}_{end_t}_s_{scale}_fix_rescale{in_suffix}/steered_results_mystery_{mystery_n}.json"
+                file_path = f"results/mystery_steered_end_t_{start_t}_{end_t}_s_{scale}{in_suffix}/steered_results_mystery_{mystery_n}.json"
+                file_path = f"results/mystery_steered_end_t_{start_t}_{end_t}_s_{scale}{in_suffix}/steered_results_mystery_{mystery_n}.json"
+                file_path = f"results/mystery_steered_300_t_{start_t}_{end_t}_s_{scale}{in_suffix}/steered_results_mystery_{mystery_n}.json"
             else:
-                file_path = f"results/mystery_steered_neg_2000_end_t_{start_t}_{end_t}_s_{scale}_l_{layer}{in_suffix}/steered_results_mystery_{mystery_n}.json"
+                file_path = f"results/mystery_steered_300_t_{start_t}_{end_t}_s_{scale}_l_10_{layer}{in_suffix}/steered_results_mystery_{mystery_n}.json"
+                file_path = f"results/mystery_steered_300_t_{start_t}_{end_t}_s_{scale}_l_{layer}{in_suffix}/steered_results_mystery_{mystery_n}.json"
         else:
             file_path = f"results/mystery_replaced_st_end_s_{scale}_t_{start_t}_{end_t}_l_0_{layer}_fix_rescale{in_suffix}/steered_results_mystery_{mystery_n}.json"
+
+        print(file_path)
         dataset = json.load(open(file_path, "r"))
     else:
         path = Path("intermediate_results/intermediate_results_9_full")
@@ -75,6 +80,7 @@ def main_gl(mystery_n, copy_n=None, suffix=""):
             else:
                 raw_llm_answer = raw_llm_answer.split("</think>")[1].strip()
             
+            raw_llm_answer = raw_llm_answer.strip()
 
             instances[iid] = {
                 "instance_id": iid,
@@ -101,12 +107,13 @@ def main_gl(mystery_n, copy_n=None, suffix=""):
             suffix = f"_{copy_n}"
         
 
-        gen_name = "steered_neg_2000" if steering else "replaced-st"
+        # gen_name = "steered_neg_4000" if steering else "replaced-st"
+        gen_name = "steered"
         gen_name = gen_name if steered_generation else "original"
         if scale == "0":
-            final_dir = Path(f"cot-planning/responses/{formatted_json['domain']}/qwq-32b-{gen_name}-full-end-{start_t}-{end_t}-{scale}{out_suffix}{suffix}/")
+            final_dir = Path(f"cot-planning/responses/{formatted_json['domain']}/qwq-32b-{gen_name}-full-300-{start_t}-{end_t}-{scale}{out_suffix}{suffix}/")
         else:
-            final_dir = Path(f"cot-planning/responses/{formatted_json['domain']}/qwq-32b-{gen_name}-full-end-{start_t}-{end_t}-{scale}-l-{layer}{out_suffix}{suffix}/")        
+            final_dir = Path(f"cot-planning/responses/{formatted_json['domain']}/qwq-32b-{gen_name}-full-300-{start_t}-{end_t}-{scale}-l-{layer}{out_suffix}{suffix}/")        
 
         # print(final_dir)
 
@@ -121,12 +128,13 @@ def main_gl(mystery_n, copy_n=None, suffix=""):
 
 
 for i in range(1, 16):
+# for i in [14, 15]:
     try:
         ci = None
-        # for ci in range(3):
-        main_gl(i, ci)
-        main_gl(i, ci, "r")
-        main_gl(i, ci, "rr")
+        for ci in range(3):
+            main_gl(i, ci, "sample_avg")
+        # main_gl(i, ci, "r")
+        # main_gl(i, ci, "rr")
         # main_gl(i, ci, "r")
         # main_gl(i, ci, "mo")
         # main_gl(i, ci, "z")

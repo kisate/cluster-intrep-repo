@@ -2,7 +2,7 @@ import os
 # os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
 # os.environ["VLLM_USE_V1"] = "0"
 from typing import Any, Dict
-from distilabel.models import vLLM
+from distilabel.models import vLLM, OpenAILLM
 from distilabel.pipeline import Pipeline
 from distilabel.steps.tasks import TextGeneration
 from distilabel.steps import Step
@@ -20,25 +20,30 @@ if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--mystery", type=int, required=True, 
                         help="Mystery number (required)")
-    parser.add_argument("--model", type=str, default="deepseek-ai/DeepSeek-R1-Distill-Llama-70B", 
+    parser.add_argument("--model", type=str, default="Qwen/Qwen2.5-32B", 
                         help="Model ID to use")
     parser.add_argument("--task", type=str, default="plan_generation_po", 
                         help="Task name")
     parser.add_argument("--context_length", type=int, default=16384, 
                         help="Context length in tokens (default: 24k)")
-    parser.add_argument("--num_samples", type=int, default=10, 
+    parser.add_argument("--num_samples", type=int, default=300, 
                         help="Number of samples to process")
     parser.add_argument("--gpu_count", type=int, default=8, 
                         help="Number of GPUs to use")
-    parser.add_argument("--username", type=str, default="dmitriihook",
-                        help="Username for HuggingFace repository")
     
     args = parser.parse_args()
     
     # Determine model ID
     model_id = args.model
-    model_short_name = model_id.split("/")[-1].lower()
-    
+    # model_id = "gpt-4.1"
+    # model_id = "llama-3.3-70b-instruct"
+    # model_id = "qwen2.5-32b-instruct-cot"
+    model_short_name = model_id.split("/")[-1].lower() + "-cot"
+    model_short_name = "llama-3.3-70b-instruct-cot"
+    model_short_name = "qwen2.5-32b-instruct-cot"
+    model_short_name = "deepseek-qwen-32b"
+    model_short_name = "qwen2.5-32b"
+
     # Configure domain name and pipeline name based on mystery number
     if args.mystery == 1:
         domain_name = "blocksworld_mystery"
@@ -46,7 +51,7 @@ if __name__ == "__main__":
         domain_name = f"blocksworld_mystery_{args.mystery}"
     
     pipeline_name = f"{model_short_name}-mystery-{args.mystery}-{args.context_length//1000}k-greedy"
-    repo_id = f"{args.username}/{model_short_name}-planning-mystery-{args.mystery}-{args.context_length//1000}k-greedy"
+    repo_id = f"dmitriihook/{model_short_name}-planning-mystery-{args.mystery}-{args.context_length//1000}k-greedy"
     
     task_name = args.task
     
@@ -62,7 +67,7 @@ if __name__ == "__main__":
     print(f"  Using {args.gpu_count} GPUs")
     
     # Create and configure the pipeline
-    prompt_template = """{{ instruction }}\n\nStrictly adhere to the format in the examples."""
+    prompt_template = """{{ instruction }}"""
     
     with Pipeline(
         name=pipeline_name,
@@ -84,6 +89,15 @@ if __name__ == "__main__":
             },
         )
         
+        # llm = OpenAILLM(
+        # model="openai/gpt-4.1-2025-04-14",
+        # base_url="https://openrouter.ai/api/v1",
+        # api_key=os.getenv("OPENAI_API_KEY"),
+        #     generation_kwargs={
+        #         "temperature": 0,
+        #         "max_new_tokens": 8192,
+        #     },
+        # )
         prompt_column = "query"
         text_generation = TextGeneration(
             llm=llm, 

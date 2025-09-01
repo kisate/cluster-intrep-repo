@@ -22,8 +22,12 @@ os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
 COMPUTE_DTYPE = torch.bfloat16
 DEVICE = 'cuda'
 MODEL_ID = "Qwen/QwQ-32B"
+# MODEL_ID = "Qwen/Qwen2.5-32B-Instruct"
+MODEL_ID = "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B"
 model_type = "qwq"
 model_name = "qwq-32b"
+# model_name = "llama-3_3-nemotron-super-49b-v1"
+# model_name = "deepseek-qwen-32b"
 LAYERS = list(range(50))
 N_ROWS = 40
 CONT_SIZE = 100
@@ -52,7 +56,7 @@ def initialize_model_and_tokenizer():
 
 def load_dataset_from_file(domain_name, task_name):
     """Load dataset from a JSON file"""
-    prompt_dir = CUR_DIR / Path(f"./cot-planning/results/{domain_name}/{model_name}-greedy/")
+    prompt_dir = CUR_DIR / Path(f"./cot-planning/results/{domain_name}/{model_name}-greedy")
     with open(prompt_dir / f"{task_name}.json", 'r') as file:
         return json.load(file)
 
@@ -69,7 +73,9 @@ def load_datasets(domain_names, dataset_types):
     
     # Load datasets
     datasets = [
-        load_dataset(f"dmitriihook/{model_name}-planning-{dataset_type}-greedy")["train"]
+        # load_dataset(f"dmitriihook/{model_name}-planning-{dataset_type}-greedy")["train"]
+        # load_dataset(f"dmitriihook/llama-3_3-nemotron-super-49b-v1-planning-{dataset_type}-greedy")["train"]
+        load_dataset(f"dmitriihook/deepseek-qwen-32b-planning-{dataset_type}-greedy")["train"]
         for dataset_type in dataset_types
     ]
     
@@ -89,18 +95,34 @@ def load_datasets(domain_names, dataset_types):
     
     return eval_results, datasets, label_datasets
 
-def extract_all_phrase_positions(tokens, phrase, cot_only=True):
+def make_phrase_tokens(phrase):
+    if "deepseek" in MODEL_ID.lower():
+        return [
+            tokenizer.encode(" " + phrase, add_special_tokens=False),
+            tokenizer.encode(" " + phrase.capitalize(), add_special_tokens=False),
+            tokenizer.encode("\n" + phrase, add_special_tokens=False)[1:],
+            tokenizer.encode("\n" + phrase.capitalize(), add_special_tokens=False)[1:],
+            tokenizer.encode("\n\n" + phrase, add_special_tokens=False)[1:],
+            tokenizer.encode("\n\n" + phrase.capitalize(), add_special_tokens=False)[1:],
+        ]
+    else:
+        return [
+            tokenizer.encode(" " + phrase),
+            tokenizer.encode(" " + phrase.capitalize()),
+            tokenizer.encode("\n" + phrase)[1:],
+            tokenizer.encode("\n" + phrase.capitalize())[1:],
+            tokenizer.encode("\n\n" + phrase)[1:],
+            tokenizer.encode("\n\n" + phrase.capitalize())[1:],
+        ]
+
+
+def extract_all_phrase_positions(tokens, phrase, cot_only=False):
     """Find all phrase positions in the tokens"""
     tokens = tokens.squeeze()
 
-    phrase_tokens = [
-        tokenizer.encode(" " + phrase),
-        tokenizer.encode(" " + phrase.capitalize()),
-        tokenizer.encode("\n" + phrase)[1:],
-        tokenizer.encode("\n" + phrase.capitalize())[1:],
-        tokenizer.encode("\n\n" + phrase)[1:],
-        tokenizer.encode("\n\n" + phrase.capitalize())[1:],
-    ]
+    
+
+    phrase_tokens = make_phrase_tokens(phrase)
 
     positions = set()
 
@@ -130,6 +152,7 @@ def extract_all_phrase_positions(tokens, phrase, cot_only=True):
 
 def collect_correct_ids(eval_results):
     """Collect IDs of correct examples"""
+    return list(range(N_ROWS))
     clean_ids = []
     for idx in range(len(eval_results)):
         if idx in eval_results and eval_results[idx]["llm_correct"]:
@@ -683,7 +706,7 @@ def process_mystery_domain(mystery_num, mean_reprs_clean, mean_clean_actions, me
     
     # Set domain names and dataset types
     domain_names = [f"blocksworld_mystery_{2}", f"blocksworld_mystery_{mystery_num}"]
-    dataset_types = [f"mystery-{2}-24k", f"mystery-{mystery_num}-24k"]
+    dataset_types = [f"mystery-{2}-16k", f"mystery-{mystery_num}-16k"]
     
     # Get domain-specific phrases from the phrases definitions
     # This assumes the phrases are defined in the code - we'll add these definitions
@@ -714,8 +737,10 @@ def process_mystery_domain(mystery_num, mean_reprs_clean, mean_clean_actions, me
     correct_ids = [
         collect_correct_ids(er) for er in eval_results
     ]
+
+    print(len(correct_ids[1]))
     
-    steps_mystery = list(range(1000, 2000, 200))
+    steps_mystery = list(range(1000, 7000, 200))
     
     # Collect hidden states for mystery domain
     hidden_states_mystery = collect_hidden_states(correct_ids[1], datasets[1], LAYERS)
@@ -741,7 +766,7 @@ def main():
     initialize_model_and_tokenizer()
     
     # Create output directory
-    output_dir = "./multilayer_representations/multilayer_2k"
+    output_dir = "./multilayer_representations_ds_ds_traces/multilayer_7k"
     os.makedirs(output_dir, exist_ok=True)
     
     # Process mystery domain 2 as clean representations first
@@ -749,7 +774,7 @@ def main():
     
     # Set domain names and dataset types for clean domain
     domain_names = ["blocksworld_mystery_2"]
-    dataset_types = ["mystery-2-24k"]
+    dataset_types = ["mystery-2-16k"]
     
     # Get domain-specific phrases
     clean_domain_phrases = DOMAIN_PHRASES["mystery_2"]
@@ -777,9 +802,9 @@ def main():
         correct_ids = [
             collect_correct_ids(er) for er in eval_results
         ]
-        
+
         # Set steps for phrase extraction
-        steps_clean = list(range(1000, 2000, 200))
+        steps_clean = list(range(1000, 7000, 200))
         
         # Collect hidden states for clean domain
         hidden_states_clean = collect_hidden_states(correct_ids[0], datasets[0], LAYERS)
